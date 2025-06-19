@@ -1,0 +1,68 @@
+{% extends 'layout.html' %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Admin Dashboard: Manage Roles</h2>
+    <a href="{{ url_for('admin_logout') }}" class="btn btn-secondary">Logout</a>
+  </div>
+  
+  {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+          {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+      {% endif %}
+  {% endwith %}
+
+  <!-- Add New Role Form -->
+  <div class="card shadow-sm mb-5">
+    <div class="card-header">
+      <h4>Add a New Interview Role</h4>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <div class="mb-3">
+          <label for="name" class="form-label">Role Name</label>
+          <input type="text" name="name" id="name" class="form-control" placeholder="e.g., Data Scientist" required>
+        </div>
+        <div class="mb-3">
+          <label for="system_prompt" class="form-label">AI System Prompt / Instructions</label>
+          <textarea name="system_prompt" id="system_prompt" rows="6" class="form-control" placeholder="Describe how the AI should behave for this role. For example: 'You are an interviewer for a Data Scientist role... ask about Python, Pandas, machine learning models, and statistical concepts.'" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Add Role</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Existing Roles Table -->
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h4>Current Roles in Database</h4>
+    </div>
+    <div class="card-body">
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col">Role Name</th>
+            <th scope="col">System Prompt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for role in roles %}
+          <tr>
+            <td>{{ role['name'] }}</td>
+            <td>{{ role['system_prompt']|truncate(150, True) }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="2">No roles found. Add one above!</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
