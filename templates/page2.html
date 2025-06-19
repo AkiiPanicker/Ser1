@@ -1,0 +1,110 @@
+{% extends 'layout.html' %}
+{% block title %}Upload Resume | Resume Analyzer{% endblock %}
+
+{% block content %}
+<style>
+  body {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: #fff;
+    font-size: 1.1rem;
+  }
+  /* --- START: Added style for the new dropdown --- */
+  .form-select-lg {
+    border-radius: 12px;
+    border: 2px solid #6a11cb;
+    font-size: 1.1rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  /* --- END: Added style for the new dropdown --- */
+  .card-style {
+    background: linear-gradient(to bottom right, #ffffff, #e3e6f3);
+    border: none;
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    color: #1c1f26;
+    animation: fadeInUp 1s ease-out;
+  }
+  .form-control-lg {
+    border-radius: 12px;
+    border: 2px solid #6a11cb;
+    font-size: 1.1rem;
+  }
+  .btn-custom {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: 0.3s;
+  }
+  .btn-custom:hover {
+    background: linear-gradient(to right, #2575fc, #6a11cb);
+  }
+  h2.text-primary {
+    color: #6a11cb !important;
+    font-size: 2.2rem;
+  }
+  .optional-text {
+    font-size: 0.95rem;
+    color: #6a11cb;
+    font-style: italic;
+  }
+  @keyframes fadeInUp {
+    0% {
+      opacity: 0;
+      transform: translateY(50px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+
+<div class="row justify-content-center align-items-center" style="min-height: 90vh;">
+  <div class="col-md-7 col-lg-6">
+    <div class="card-style">
+      <h2 class="text-center mb-4 fw-bold text-primary">Begin Your Interview</h2>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST" action="{{ url_for('upload_resume') }}" enctype="multipart/form-data">
+        
+        <!-- START: EDITED CODE BLOCK - Role Selection -->
+        <div class="mb-4">
+            <label for="role_id" class="form-label fw-semibold">1. Select Interview Role:</label>
+            <select name="role_id" id="role_id" class="form-select form-select-lg" required>
+                <option value="" disabled selected>-- Choose the position --</option>
+                {% for role in roles %}
+                    <option value="{{ role['id'] }}">{{ role['name'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <!-- END: EDITED CODE BLOCK -->
+
+        <div class="mb-4">
+          <label for="resume_file" class="form-label fw-semibold">2. Choose Resume File (PDF/Text):</label>
+          <input type="file" class="form-control form-control-lg" id="resume_file" name="resume_file" accept=".pdf,.txt" />
+        </div>
+
+        <p class="text-center optional-text">or paste relevant text below instead</p>
+        
+        <div class="mb-4">
+          <label for="job_description" class="form-label fw-semibold">Paste Text (Optional):</label>
+          <textarea class="form-control form-control-lg" id="job_description" name="job_description" rows="5" placeholder="Paste resume text or a job description..."></textarea>
+        </div>
+        
+        <button type="submit" class="btn btn-custom btn-lg w-100">Start Interview</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
