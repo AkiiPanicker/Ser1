@@ -1,0 +1,67 @@
+{% extends 'layout.html' %}
+{% block title %}Welcome | Resume Analyzer{% endblock %}
+
+{% block content %}
+<style>
+  body {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: pink;
+    font-size: 1.2rem;
+  }
+  .card-style {
+    background: linear-gradient(to bottom right, #ffffff, #e3e6f3);
+    border: none;
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    color: #1c1f26;
+    animation: fadeInUp 1s ease-out;
+  }
+  .form-control-lg {
+    border-radius: 12px;
+    border: 2px solid #6a11cb;
+    font-size: 1.1rem;
+  }
+  .btn-custom {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: 0.3s;
+  }
+  .btn-custom:hover {
+    background: linear-gradient(to right, #2575fc, #6a11cb);
+  }
+  h2.text-primary {
+    color: #6a11cb !important;
+    font-size: 2.2rem;
+  }
+  @keyframes fadeInUp {
+    0% {
+      opacity: 0;
+      transform: translateY(50px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+
+<div class="row justify-content-center align-items-center" style="min-height: 90vh;">
+  <div class="col-md-6 col-lg-4 mt-n5">
+    <div class="card-style">
+      <h2 class="text-center mb-4 fw-bold text-primary">Welcome to Resume Analyzer</h2>
+      <form method="POST" action="{{ url_for('page1') }}">
+        <div class="mb-4">
+          <label for="candidate_name" class="form-label fw-semibold">Enter your name:</label>
+          <input type="text" id="candidate_name" name="candidate_name" class="form-control form-control-lg" placeholder="e.g., Akshat Panicker" required autofocus />
+        </div>
+        <button type="submit" class="btn btn-custom btn-lg w-100">Next</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
