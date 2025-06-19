@@ -1,0 +1,369 @@
+{% extends 'layout.html' %}
+{% block title %}Interview | Resume Analyzer{% endblock %}
+
+{% block content %}
+<style>
+  body {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: #fff;
+    font-size: 1.1rem;
+    overflow-y: hidden; /* Prevent main page scroll */
+  }
+
+  .interview-container {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+    padding: 2rem;
+    height: calc(100vh - 4rem);
+  }
+
+  /* --- 1. PROPORTION ADJUSTMENT --- */
+  /* Shrink the video panel slightly */
+  .video-panel {
+    flex: 2; /* CHANGED: Was 2 */
+  }
+  
+  /* Expand the chat panel slightly */
+  .chat-panel {
+    flex: 3; /* CHANGED: Was 1 */
+  }
+
+  .video-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    justify-content: center;
+    align-items: center;
+    transition: box-shadow 0.3s ease-in-out;
+    border-radius: 20px;
+  }
+  
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #6a11cb #e3e6f3;
+  }
+  
+  /* Make video/AI boxes share space equally within their panel */
+  #interviewerBox,
+  .user-video-container {
+    flex: 1; 
+    width: 100%;
+    min-height: 0; 
+  }
+  
+  #interviewerBox {
+    background-color: #343a40;
+    border-radius: 15px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: box-shadow 0.3s ease-in-out;
+  }
+  
+  /* --- 2. AI PROFILE PICTURE STYLE --- */
+  .ai-pfp {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%; /* Makes the div a circle */
+    background-color: #495057; /* Fallback color */
+    border: 3px solid #adb5bd; /* Defines the circle */
+    /* A cool, royalty-free robot image */
+    background-image: url('https://images.unsplash.com/photo-1589254065909-b7086229d08c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Nnx8cm9ib3R8ZW58MHx8MHx8fDA%3D&auto=format&fit=crop&w=500&q=60');
+    background-size: cover; /* Ensures image fills the circle */
+    background-position: center; /* Centers the image */
+  }
+
+  /* Glowing Effect Styles (unchanged) */
+  .glowing-interviewer {
+    box-shadow: 0 0 15px #2575fc, 0 0 25px #2575fc, 0 0 35px #2575fc;
+  }
+  .glowing-user {
+    box-shadow: 0 0 15px #6a11cb, 0 0 25px #6a11cb, 0 0 35px #6a11cb;
+  }
+
+  .user-video-container {
+    background-color: #1c1f26;
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #userVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+
+  .video-placeholder {
+    color: #6c757d;
+    text-align: center;
+    padding: 2rem;
+  }
+
+  /* Webkit Scrollbar Styling (unchanged) */
+  .chat-panel::-webkit-scrollbar { width: 8px; }
+  .chat-panel::-webkit-scrollbar-track { background: #e3e6f3; border-radius: 10px; }
+  .chat-panel::-webkit-scrollbar-thumb { background-color: #6a11cb; border-radius: 10px; border: 2px solid #e3e6f3; }
+  .chat-panel::-webkit-scrollbar-thumb:hover { background-color: #2575fc; }
+
+  .card-style { background: linear-gradient(to bottom right, #ffffff, #e3e6f3); border-radius: 20px; padding: 2.5rem; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); color: #1c1f26; animation: fadeInUp 0.8s ease-out; position: relative; width: 100%; }
+
+  @media (max-width: 992px) {
+    body { overflow-y: auto; }
+    .interview-container { flex-direction: column; height: auto; }
+    .video-panel { flex-direction: row; align-items: stretch; height: 200px; }
+    .chat-panel { max-height: none; overflow-y: visible; }
+    #interviewerBox { flex: 0 0 120px; height: auto; } 
+  }
+
+  /* Other styles (unchanged) */
+  .end-interview-btn { position: absolute; top: 1.5rem; right: 1.5rem; z-index: 10; }
+  h2.text-primary { color: #6a11cb !important; font-size: 1.8rem; font-weight: 700; }
+  label { font-weight: 600; color: #444; }
+  .form-control-lg { border-radius: 12px; border: 2px solid #6a11cb; font-size: 1.1rem; box-shadow: none; }
+  .btn-custom { background: linear-gradient(to right, #6a11cb, #2575fc); color: white; border: none; border-radius: 12px; font-weight: bold; font-size: 1.1rem; transition: 0.3s ease; }
+  .feedback-box { background-color: #eef1f9; border-left: 5px solid #6a11cb; padding: 1rem; margin-top: 1.2rem; border-radius: 10px; color: #333; font-style: italic; }
+  .score-box { margin-top: 1.2rem; font-weight: bold; font-size: 1.1rem; color: #2575fc; }
+  .final-box { text-align: center; padding: 2rem; color: #1c1f26; }
+  .score-highlight { font-size: 2.4rem; font-weight: bold; color: #ff9f00; }
+  ul.list-group { border-radius: 10px; margin-top: 1.2rem; }
+  .list-group-item { background-color: #f8f9fc; border: none; margin-bottom: 0.5rem; border-left: 4px solid #2575fc; }
+  @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(40px); } 100% { opacity: 1; transform: translateY(0); } }
+  .audio-player-container { margin: 15px 0 20px 0; text-align: center; }
+  .audio-player-container audio { width: 100%; max-width: 400px; margin: 0 auto; }
+  #speechStatus { font-weight: bold; margin-top: 10px; color: #6a11cb; }
+  #speechStatus.recording { color: green; }
+  #speechStatus.error { color: red; }
+</style>
+
+<div class="interview-container">
+  <!-- Left: Video Panel -->
+  <div class="video-panel" id="videoPanel">
+      <!-- AI Interviewer Box -->
+      <div id="interviewerBox">
+          <!-- The SVG icon is replaced with this div for the profile picture -->
+          <div class="ai-pfp"></div>
+      </div>
+      <!-- User's video goes here -->
+      <div class="user-video-container">
+          <video id="userVideo" autoplay playsinline muted></video>
+          <div id="videoPlaceholder" class="video-placeholder" style="display: none;">
+              <p>Could not access webcam.</p>
+              <p>Please grant permission in your browser.</p>
+          </div>
+      </div>
+  </div>
+
+  <!-- Right: Chat Panel (No changes to the HTML structure here) -->
+  <div class="chat-panel">
+    <div class="card-style">
+      {% if interview_finished %}
+        <div class="final-box">
+          <h2 class="mb-4">Interview Summary for <strong>{{ candidate_name }}</strong></h2>
+          <p class="score-box">Average Score: <span class="score-highlight">{{ average_score|round(1) }}/10</span></p>
+          <p class="score-box">Percentage Score: <span class="score-highlight">{{ percentage_score|round(1) }}%</span></p>
+          <p class="mt-4 fs-5">{{ final_message }}</p>
+          <hr />
+          <h4 class="mt-4">Feedback Summary:</h4>
+          <ul class="list-group text-start">
+            {% for score, feedback in summary_data %}
+              <li class="list-group-item">
+                <strong>Score:</strong> {{ score|round(1) }} <br />
+                {% if feedback %}<em>{{ feedback }}</em>{% else %}<em>No detailed feedback provided.</em>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <form method="POST" action="{{ url_for('interview') }}">
+            <button type="submit" name="end_interview" value="true" class="btn btn-danger end-interview-btn">End Interview</button>
+        </form>
+        <h2 class="text-primary mb-3">Hi {{ candidate_name }}, here's your question {{ question_number }}:</h2>
+        <p class="mb-4 fw-semibold">{{ question }}</p>
+                {% if audio_file_url %}
+          <div class="audio-player-container">
+            <!-- The audio element is now hidden and plays automatically. -->
+            <!-- We removed 'controls' and added 'style="display: none;"' -->
+            <audio id="questionAudio" style="display: none;">
+              <source src="{{ audio_file_url }}" type="audio/mpeg">
+              Your browser does not support the audio element.
+            </audio>
+            <!-- The <p> tag below is now handled by the 'speechStatus' element, so we can remove it. -->
+          </div>
+        {% endif %}
+        <form method="POST">
+          <div class="mb-3">
+            <label for="answer">Your Answer:</label>
+            <textarea id="answer" name="answer" rows="5" class="form-control form-control-lg" placeholder="Please wait for the audio to finish and microphone to activate..." required disabled></textarea>
+          </div>
+          <div class="speech-controls">
+            <p id="speechStatus" class="mt-2">Loading...</p>
+          </div>
+          {% if last_score is not none %}
+            <div class="score-box">Last Score: {{ last_score|round(1) }}/10</div>
+          {% endif %}
+          {% if last_feedback %}
+            <div class="feedback-box">{{ last_feedback }}</div>
+          {% endif %}
+          <button type="submit" class="btn btn-custom btn-lg mt-3 w-100" id="submitButton" disabled>Submit Answer</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+    // --- START: MODIFIED SCRIPT BLOCK ---
+    document.addEventListener('DOMContentLoaded', function() {
+        const interviewerBox = document.getElementById('interviewerBox');
+        const videoPanel = document.getElementById('videoPanel');
+        const videoElement = document.getElementById('userVideo');
+        const videoPlaceholder = document.getElementById('videoPlaceholder');
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(function(stream) {
+                    videoElement.srcObject = stream;
+                    videoElement.style.display = 'block';
+                    videoPlaceholder.style.display = 'none';
+                })
+                .catch(function(error) {
+                    console.error("Error accessing webcam: ", error);
+                    videoElement.style.display = 'none';
+                    videoPlaceholder.style.display = 'block';
+                });
+        } else {
+            console.error("getUserMedia not supported on your browser!");
+            videoElement.style.display = 'none';
+            videoPlaceholder.style.display = 'block';
+        }
+
+        const audioPlayer = document.getElementById('questionAudio');
+        const answerTextarea = document.getElementById('answer');
+        const speechStatus = document.getElementById('speechStatus');
+        const submitButton = document.getElementById('submitButton');
+        
+        let recognition;
+        let finalTranscript = '';
+        let silenceTimeout;
+        let noSpeechTimeout;
+
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true; // Key change: listen continuously
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = function() {
+                videoPanel.classList.add('glowing-user');
+                speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10 seconds of silence.';
+                speechStatus.classList.add('recording');
+                answerTextarea.disabled = false;
+                answerTextarea.focus();
+                // Set a timeout to stop if no speech is detected at all
+                noSpeechTimeout = setTimeout(() => {
+                    speechStatus.textContent = 'No speech detected. Timed out.';
+                    recognition.stop();
+                }, 15000); // 15 seconds to start speaking
+            };
+
+            recognition.onresult = function(event) {
+                // User has started speaking, so clear the "no speech" timeout
+                clearTimeout(noSpeechTimeout);
+
+                // Reset the silence timer every time we get a result
+                clearTimeout(silenceTimeout);
+                silenceTimeout = setTimeout(() => { recognition.stop(); }, 10000); // 10 seconds of silence
+
+                let interimTranscript = '';
+                finalTranscript = ''; // Reset final transcript to rebuild it
+                for (let i = 0; i < event.results.length; ++i) {
+                     // Check if it's the final transcript for this part of the speech
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript + ' ';
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                answerTextarea.value = finalTranscript + interimTranscript;
+            };
+
+            recognition.onerror = function(event) {
+                videoPanel.classList.remove('glowing-user');
+                clearTimeout(silenceTimeout);
+                clearTimeout(noSpeechTimeout);
+                speechStatus.textContent = `Error: ${event.error}. You can type your answer.`;
+                speechStatus.classList.remove('recording');
+                speechStatus.classList.add('error');
+                answerTextarea.disabled = false;
+                submitButton.disabled = false;
+                if (event.error === 'not-allowed') {
+                    speechStatus.textContent = 'Microphone access denied. Please allow microphone access.';
+                }
+            };
+
+            recognition.onend = function() {
+                videoPanel.classList.remove('glowing-user');
+                clearTimeout(silenceTimeout);
+                clearTimeout(noSpeechTimeout);
+                speechStatus.classList.remove('recording');
+                if (!speechStatus.classList.contains('error')) {
+                    speechStatus.textContent = 'Recording finished. Review your answer and submit.';
+                }
+                submitButton.disabled = false;
+                answerTextarea.value = finalTranscript.trim();
+            };
+        } else {
+            answerTextarea.disabled = false;
+            submitButton.disabled = false;
+            speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
+            speechStatus.classList.add('error');
+        }
+
+        if (audioPlayer) {
+            audioPlayer.play().then(() => {
+                interviewerBox.classList.add('glowing-interviewer');
+                speechStatus.textContent = 'Playing question...';
+                audioPlayer.onended = function() {
+                    interviewerBox.classList.remove('glowing-interviewer');
+                    console.log('Question audio ended. Starting speech recognition...');
+                    answerTextarea.value = '';
+                    finalTranscript = '';
+                    if (recognition) {
+                        recognition.start();
+                    }
+                };
+            }).catch(function(error) {
+                console.warn("Autoplay prevented or error:", error);
+                speechStatus.textContent = 'Autoplay blocked. Please manually enable audio or type your answer.';
+                speechStatus.classList.add('error');
+                answerTextarea.disabled = false;
+                submitButton.disabled = false;
+            });
+        } else {
+            // Fallback if no audio file is present
+            answerTextarea.disabled = false;
+            submitButton.disabled = false;
+            if (recognition) {
+                // Start recognition immediately if there's no audio to play
+                speechStatus.textContent = 'Ready for your answer.';
+                answerTextarea.value = '';
+                finalTranscript = '';
+                recognition.start();
+            } else {
+                speechStatus.textContent = 'Speech recognition not supported. Type your answer.';
+            }
+        }
+    });
+    // --- END: MODIFIED SCRIPT BLOCK ---
+</script>
+{% endblock %}
