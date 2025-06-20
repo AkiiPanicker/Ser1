@@ -22,11 +22,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- Define all folders and DB ---
+# --- Define all folders, DB, and constants --- # MODIFIED
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'static/audio'
 REPORTS_FOLDER = 'reports'
 DATABASE = 'database.db' # Path to our SQLite database
+MAX_QUESTIONS = 10 # <-- NEW CONSTANT
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
@@ -376,7 +377,8 @@ def interview():
 
 
     if request.method == 'POST':
-        if 'end_interview' in request.form or session.get('question_num', 1) > 10:
+        # Replaced 10 with MAX_QUESTIONS
+        if 'end_interview' in request.form or session.get('question_num', 1) > MAX_QUESTIONS:
             session['interview_finished'] = True
             return render_summary_and_cleanup()
 
@@ -400,7 +402,8 @@ def interview():
         session['interview_history'].append(f"Question {question_num}: {next_question}")
         session['question_num'] = question_num + 1
 
-        if session.get('question_num') > 10:
+        # Replaced 10 with MAX_QUESTIONS
+        if session.get('question_num') > MAX_QUESTIONS:
              session['interview_finished'] = True
              return render_summary_and_cleanup()
         else:
@@ -421,11 +424,23 @@ def interview():
         current_question = first_question
             
     session.modified = True
+    
+    # MODIFIED: Passing new variables to the template
+    current_question_num = session.get('question_num', 1)
+    if request.method == 'POST':
+        # On post, the question_num has been incremented to the *next* question.
+        # The number in the H2 and progress bar should be the *new* question's number.
+        display_question_num = current_question_num
+    else:
+        # On GET, it's the first question.
+        display_question_num = 1
+        
     return render_template('page3.html',
                            question=current_question,
                            last_score=session.get('scores', [])[-1] if session.get('scores') and request.method == 'POST' else None,
                            last_feedback=session.get('feedbacks', [])[-1] if session.get('feedbacks') and request.method == 'POST' else None,
-                           question_number=session.get('question_num', 1) - 1 if request.method == 'POST' else 1,
+                           question_number=display_question_num, # Corrected to show the current question number
+                           max_questions=MAX_QUESTIONS, # NEW: Passing max questions
                            candidate_name=session.get('candidate_name', 'Candidate'),
                            interview_finished=session.get('interview_finished', False),
                            audio_file_url=url_for('static', filename=f'audio/{session.get("audio_filename")}') if session.get('audio_filename') else None)
