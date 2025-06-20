@@ -18,15 +18,12 @@
     height: calc(100vh - 4rem);
   }
 
-  /* --- 1. PROPORTION ADJUSTMENT --- */
-  /* Shrink the video panel slightly */
   .video-panel {
-    flex: 2; /* CHANGED: Was 2 */
+    flex: 2;
   }
   
-  /* Expand the chat panel slightly */
   .chat-panel {
-    flex: 3; /* CHANGED: Was 1 */
+    flex: 3;
   }
 
   .video-panel {
@@ -48,7 +45,6 @@
     scrollbar-color: #6a11cb #e3e6f3;
   }
   
-  /* Make video/AI boxes share space equally within their panel */
   #interviewerBox,
   .user-video-container {
     flex: 1; 
@@ -65,26 +61,45 @@
     transition: box-shadow 0.3s ease-in-out;
   }
   
-  /* --- 2. AI PROFILE PICTURE STYLE --- */
   .ai-pfp {
     width: 90px;
     height: 90px;
-    border-radius: 50%; /* Makes the div a circle */
-    background-color: #495057; /* Fallback color */
-    border: 3px solid #adb5bd; /* Defines the circle */
-    /* A cool, royalty-free robot image */
+    border-radius: 50%;
+    background-color: #495057;
+    border: 3px solid #adb5bd;
     background-image: url('https://images.unsplash.com/photo-1589254065909-b7086229d08c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Nnx8cm9ib3R8ZW58MHx8MHx8fDA%3D&auto=format&fit=crop&w=500&q=60');
-    background-size: cover; /* Ensures image fills the circle */
-    background-position: center; /* Centers the image */
+    background-size: cover;
+    background-position: center;
   }
 
-  /* Glowing Effect Styles (unchanged) */
-  .glowing-interviewer {
+  /* --- START: NEW AI STATE STYLES --- */
+  @keyframes pulse {
+    0% {
+        box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset;
+    }
+    50% {
+        box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), 0 0 14px rgba(255, 255, 255, 0.7) inset;
+    }
+    100% {
+        box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset;
+    }
+  }
+
+  #interviewerBox.speaking {
+    /* Blue "speaking" glow */
     box-shadow: 0 0 15px #2575fc, 0 0 25px #2575fc, 0 0 35px #2575fc;
   }
-  .glowing-user {
+
+  #interviewerBox.listening {
+    /* Purple "listening" glow, moved from user video */
     box-shadow: 0 0 15px #6a11cb, 0 0 25px #6a11cb, 0 0 35px #6a11cb;
   }
+  
+  #interviewerBox.thinking {
+    /* Subtle pulsing "thinking" effect */
+    animation: pulse 2s infinite ease-in-out;
+  }
+  /* --- END: NEW AI STATE STYLES --- */
 
   .user-video-container {
     background-color: #1c1f26;
@@ -108,7 +123,6 @@
     padding: 2rem;
   }
 
-  /* Webkit Scrollbar Styling (unchanged) */
   .chat-panel::-webkit-scrollbar { width: 8px; }
   .chat-panel::-webkit-scrollbar-track { background: #e3e6f3; border-radius: 10px; }
   .chat-panel::-webkit-scrollbar-thumb { background-color: #6a11cb; border-radius: 10px; border: 2px solid #e3e6f3; }
@@ -124,7 +138,6 @@
     #interviewerBox { flex: 0 0 120px; height: auto; } 
   }
 
-  /* Other styles (unchanged) */
   .end-interview-btn { position: absolute; top: 1.5rem; right: 1.5rem; z-index: 10; }
   h2.text-primary { color: #6a11cb !important; font-size: 1.8rem; font-weight: 700; }
   label { font-weight: 600; color: #444; }
@@ -146,10 +159,9 @@
 
 <div class="interview-container">
   <!-- Left: Video Panel -->
-  <div class="video-panel" id="videoPanel">
+  <div class="video-panel">
       <!-- AI Interviewer Box -->
       <div id="interviewerBox">
-          <!-- The SVG icon is replaced with this div for the profile picture -->
           <div class="ai-pfp"></div>
       </div>
       <!-- User's video goes here -->
@@ -219,17 +231,15 @@
 </div>
 
 <script>
-    // --- START: MODIFIED SCRIPT BLOCK WITH AUTO-SUBMIT ---
+    // --- START: MODIFIED SCRIPT BLOCK FOR AI STATE CHANGES ---
     document.addEventListener('DOMContentLoaded', function() {
         const interviewerBox = document.getElementById('interviewerBox');
-        const videoPanel = document.getElementById('videoPanel');
         const videoElement = document.getElementById('userVideo');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
-        const answerForm = document.getElementById('answerForm'); // Get form for submission
-
-        // --- NEW: A variable to hold our auto-submit timer ---
+        const answerForm = document.getElementById('answerForm'); 
         let autoSubmitTimer;
 
+        // Webcam Access (no change)
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true, audio: false })
                 .then(function(stream) {
@@ -265,8 +275,9 @@
             recognition.interimResults = true;
             recognition.lang = 'en-US';
 
+            // STATE CHANGE: AI is "listening"
             recognition.onstart = function() {
-                videoPanel.classList.add('glowing-user');
+                interviewerBox.classList.add('listening'); // ADDED THIS
                 speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10 seconds of silence.';
                 speechStatus.classList.add('recording');
                 answerTextarea.disabled = false;
@@ -277,6 +288,7 @@
                 }, 15000); 
             };
 
+            // Recognition results (no change)
             recognition.onresult = function(event) {
                 clearTimeout(noSpeechTimeout);
                 clearTimeout(silenceTimeout);
@@ -292,9 +304,10 @@
                 }
                 answerTextarea.value = finalTranscript + interimTranscript;
             };
-
+            
+            // Error handling
             recognition.onerror = function(event) {
-                videoPanel.classList.remove('glowing-user');
+                interviewerBox.classList.remove('listening'); // ADDED THIS to clean up state on error
                 clearTimeout(silenceTimeout);
                 clearTimeout(noSpeechTimeout);
                 speechStatus.textContent = `Error: ${event.error}. You can type your answer.`;
@@ -306,10 +319,10 @@
                     speechStatus.textContent = 'Microphone access denied. Please allow microphone access.';
                 }
             };
-
-            // --- MODIFIED onend HANDLER ---
+            
+            // STATE CHANGE: AI stops listening
             recognition.onend = function() {
-                videoPanel.classList.remove('glowing-user');
+                interviewerBox.classList.remove('listening'); // ADDED THIS
                 clearTimeout(silenceTimeout);
                 clearTimeout(noSpeechTimeout);
                 speechStatus.classList.remove('recording');
@@ -318,9 +331,9 @@
                 answerTextarea.value = finalAnswer;
 
                 if (speechStatus.classList.contains('error')) {
-                    // Don't start timer if there was an error
+                    // Do nothing on error
                 } else if (finalAnswer) {
-                    // If an answer was successfully recorded, start the auto-submit countdown.
+                    // Start auto-submit timer
                     let countdown = 10;
                     speechStatus.textContent = `Answer captured. Submitting in ${countdown}s. Review or submit now.`;
 
@@ -329,41 +342,46 @@
                         speechStatus.textContent = `Answer captured. Submitting in ${countdown}s. Review or submit now.`;
                         if (countdown <= 0) {
                             clearInterval(autoSubmitTimer);
-                            console.log("Auto-submitting form.");
-                            submitButton.click(); // Click the submit button programmatically
+                            submitButton.click(); 
                         }
                     }, 1000);
                 } else {
-                    // If recognition ended but no speech was captured
                     speechStatus.textContent = 'Recording finished. No answer detected. You can type or submit manually.';
                 }
             };
         } else {
+            // Speech recognition not supported
             answerTextarea.disabled = false;
             submitButton.disabled = false;
             speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
             speechStatus.classList.add('error');
         }
 
-        // --- NEW: Event listener to cancel timer on manual submit ---
+        // STATE CHANGE: AI is "thinking" on form submit
         if (answerForm) {
             answerForm.addEventListener('submit', () => {
                 clearInterval(autoSubmitTimer);
-                console.log("Manual submission detected. Auto-submit cancelled.");
+                console.log("Form submitted. AI is now 'thinking'.");
+                // Clean up previous states and set "thinking" state
+                interviewerBox.classList.remove('speaking', 'listening');
+                interviewerBox.classList.add('thinking');
             });
         }
-
+        
+        // STATE CHANGE: AI is "speaking" when audio plays
         if (audioPlayer) {
             audioPlayer.play().then(() => {
-                interviewerBox.classList.add('glowing-interviewer');
+                interviewerBox.classList.add('speaking'); // ADDED THIS
                 speechStatus.textContent = 'Playing question...';
+                
+                // STATE CHANGE: AI stops "speaking" when audio ends
                 audioPlayer.onended = function() {
-                    interviewerBox.classList.remove('glowing-interviewer');
+                    interviewerBox.classList.remove('speaking'); // ADDED THIS
                     console.log('Question audio ended. Starting speech recognition...');
                     answerTextarea.value = '';
                     finalTranscript = '';
                     if (recognition) {
-                        recognition.start();
+                        recognition.start(); // This will trigger onstart and the "listening" state
                     }
                 };
             }).catch(function(error) {
@@ -374,13 +392,14 @@
                 submitButton.disabled = false;
             });
         } else {
+            // Case where no audio file exists (e.g. page refresh on error)
             answerTextarea.disabled = false;
             submitButton.disabled = false;
             if (recognition) {
                 speechStatus.textContent = 'Ready for your answer.';
                 answerTextarea.value = '';
                 finalTranscript = '';
-                recognition.start();
+                recognition.start(); // This will trigger onstart and the "listening" state
             } else {
                 speechStatus.textContent = 'Speech recognition not supported. Type your answer.';
             }
@@ -389,4 +408,3 @@
     // --- END: MODIFIED SCRIPT BLOCK ---
 </script>
 {% endblock %}
-
