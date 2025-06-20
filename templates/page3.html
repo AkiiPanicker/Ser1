@@ -3,6 +3,7 @@
 
 {% block content %}
 <style>
+  /* All CSS styles remain exactly the same as in your original file */
   body {
     background: linear-gradient(to right, #6a11cb, #2575fc);
     color: #fff;
@@ -72,34 +73,15 @@
     background-position: center;
   }
 
-  /* --- START: NEW AI STATE STYLES --- */
   @keyframes pulse {
-    0% {
-        box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset;
-    }
-    50% {
-        box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), 0 0 14px rgba(255, 255, 255, 0.7) inset;
-    }
-    100% {
-        box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset;
-    }
+    0% { box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset; }
+    50% { box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), 0 0 14px rgba(255, 255, 255, 0.7) inset; }
+    100% { box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset; }
   }
 
-  #interviewerBox.speaking {
-    /* Blue "speaking" glow */
-    box-shadow: 0 0 15px #2575fc, 0 0 25px #2575fc, 0 0 35px #2575fc;
-  }
-
-  #interviewerBox.listening {
-    /* Purple "listening" glow, moved from user video */
-    box-shadow: 0 0 15px #6a11cb, 0 0 25px #6a11cb, 0 0 35px #6a11cb;
-  }
-  
-  #interviewerBox.thinking {
-    /* Subtle pulsing "thinking" effect */
-    animation: pulse 2s infinite ease-in-out;
-  }
-  /* --- END: NEW AI STATE STYLES --- */
+  #interviewerBox.speaking { box-shadow: 0 0 15px #2575fc, 0 0 25px #2575fc, 0 0 35px #2575fc; }
+  #interviewerBox.listening { box-shadow: 0 0 15px #6a11cb, 0 0 25px #6a11cb, 0 0 35px #6a11cb; }
+  #interviewerBox.thinking { animation: pulse 2s infinite ease-in-out; }
 
   .user-video-container {
     background-color: #1c1f26;
@@ -110,18 +92,8 @@
     align-items: center;
   }
 
-  #userVideo {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1);
-  }
-
-  .video-placeholder {
-    color: #6c757d;
-    text-align: center;
-    padding: 2rem;
-  }
+  #userVideo { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .video-placeholder { color: #6c757d; text-align: center; padding: 2rem; }
 
   .chat-panel::-webkit-scrollbar { width: 8px; }
   .chat-panel::-webkit-scrollbar-track { background: #e3e6f3; border-radius: 10px; }
@@ -155,16 +127,36 @@
   #speechStatus { font-weight: bold; margin-top: 10px; color: #6a11cb; }
   #speechStatus.recording { color: green; }
   #speechStatus.error { color: red; }
+
+  .progress-container {
+    margin-bottom: 1.5rem;
+    text-align: center;
+    color: #495057;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .progress-bar-track {
+    background-color: #e9ecef;
+    border-radius: 50px;
+    height: 12px;
+    width: 100%;
+    margin-top: 0.5rem;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    height: 100%;
+    border-radius: 50px;
+    transition: width 0.5s ease-in-out;
+    /* The width is now set by JavaScript below */
+  }
 </style>
 
 <div class="interview-container">
-  <!-- Left: Video Panel -->
   <div class="video-panel">
-      <!-- AI Interviewer Box -->
       <div id="interviewerBox">
           <div class="ai-pfp"></div>
       </div>
-      <!-- User's video goes here -->
       <div class="user-video-container">
           <video id="userVideo" autoplay playsinline muted></video>
           <div id="videoPlaceholder" class="video-placeholder" style="display: none;">
@@ -174,7 +166,6 @@
       </div>
   </div>
 
-  <!-- Right: Chat Panel (No changes to the HTML structure here) -->
   <div class="chat-panel">
     <div class="card-style">
       {% if interview_finished %}
@@ -198,9 +189,18 @@
         <form method="POST" action="{{ url_for('interview') }}">
             <button type="submit" name="end_interview" value="true" class="btn btn-danger end-interview-btn">End Interview</button>
         </form>
-        <h2 class="text-primary mb-3">Hi {{ candidate_name }}, here's your question {{ question_number }}:</h2>
+
+        <div class="progress-container">
+            <span>Question {{ question_number }} of {{ max_questions }}</span>
+            <div class="progress-bar-track">
+                <div id="progressBarFill" class="progress-bar-fill" data-progress="{{ (question_number / max_questions * 100)|round }}"></div>
+            </div>
+        </div>
+
+        <h2 class="text-primary mb-3">Hi {{ candidate_name }}, here's your question:</h2>
         <p class="mb-4 fw-semibold">{{ question }}</p>
-                {% if audio_file_url %}
+
+        {% if audio_file_url %}
           <div class="audio-player-container">
             <audio id="questionAudio" style="display: none;">
               <source src="{{ audio_file_url }}" type="audio/mpeg">
@@ -208,7 +208,7 @@
             </audio>
           </div>
         {% endif %}
-        <!-- THIS FORM WILL BE AUTO-SUBMITTED -->
+        
         <form id="answerForm" method="POST">
           <div class="mb-3">
             <label for="answer">Your Answer:</label>
@@ -225,21 +225,32 @@
           {% endif %}
           <button type="submit" class="btn btn-custom btn-lg mt-3 w-100" id="submitButton" disabled>Submit Answer</button>
         </form>
-      {% endif %}
+        {% endif %}
     </div>
   </div>
 </div>
 
 <script>
-    // --- START: MODIFIED SCRIPT BLOCK FOR AI STATE CHANGES ---
     document.addEventListener('DOMContentLoaded', function() {
+        // --- START: NEW CODE TO FIX THE LINTER "ERROR" ---
+        // This script sets the width of the progress bar using the data attribute.
+        // This avoids the false-positive error in your editor.
+        const progressBar = document.getElementById('progressBarFill');
+        if (progressBar) {
+            const progressPercentage = progressBar.getAttribute('data-progress');
+            progressBar.style.width = progressPercentage + '%';
+        }
+        // --- END: NEW CODE ---
+
+
+        // The rest of your JavaScript remains exactly the same and will work perfectly.
         const interviewerBox = document.getElementById('interviewerBox');
         const videoElement = document.getElementById('userVideo');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
         const answerForm = document.getElementById('answerForm'); 
         let autoSubmitTimer;
 
-        // Webcam Access (no change)
+        // Webcam Access
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true, audio: false })
                 .then(function(stream) {
@@ -275,9 +286,8 @@
             recognition.interimResults = true;
             recognition.lang = 'en-US';
 
-            // STATE CHANGE: AI is "listening"
             recognition.onstart = function() {
-                interviewerBox.classList.add('listening'); // ADDED THIS
+                interviewerBox.classList.add('listening');
                 speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10 seconds of silence.';
                 speechStatus.classList.add('recording');
                 answerTextarea.disabled = false;
@@ -288,7 +298,6 @@
                 }, 15000); 
             };
 
-            // Recognition results (no change)
             recognition.onresult = function(event) {
                 clearTimeout(noSpeechTimeout);
                 clearTimeout(silenceTimeout);
@@ -305,9 +314,8 @@
                 answerTextarea.value = finalTranscript + interimTranscript;
             };
             
-            // Error handling
             recognition.onerror = function(event) {
-                interviewerBox.classList.remove('listening'); // ADDED THIS to clean up state on error
+                interviewerBox.classList.remove('listening');
                 clearTimeout(silenceTimeout);
                 clearTimeout(noSpeechTimeout);
                 speechStatus.textContent = `Error: ${event.error}. You can type your answer.`;
@@ -320,9 +328,8 @@
                 }
             };
             
-            // STATE CHANGE: AI stops listening
             recognition.onend = function() {
-                interviewerBox.classList.remove('listening'); // ADDED THIS
+                interviewerBox.classList.remove('listening');
                 clearTimeout(silenceTimeout);
                 clearTimeout(noSpeechTimeout);
                 speechStatus.classList.remove('recording');
@@ -333,7 +340,6 @@
                 if (speechStatus.classList.contains('error')) {
                     // Do nothing on error
                 } else if (finalAnswer) {
-                    // Start auto-submit timer
                     let countdown = 10;
                     speechStatus.textContent = `Answer captured. Submitting in ${countdown}s. Review or submit now.`;
 
@@ -350,38 +356,33 @@
                 }
             };
         } else {
-            // Speech recognition not supported
             answerTextarea.disabled = false;
             submitButton.disabled = false;
             speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
             speechStatus.classList.add('error');
         }
 
-        // STATE CHANGE: AI is "thinking" on form submit
         if (answerForm) {
             answerForm.addEventListener('submit', () => {
                 clearInterval(autoSubmitTimer);
                 console.log("Form submitted. AI is now 'thinking'.");
-                // Clean up previous states and set "thinking" state
                 interviewerBox.classList.remove('speaking', 'listening');
                 interviewerBox.classList.add('thinking');
             });
         }
         
-        // STATE CHANGE: AI is "speaking" when audio plays
         if (audioPlayer) {
             audioPlayer.play().then(() => {
-                interviewerBox.classList.add('speaking'); // ADDED THIS
+                interviewerBox.classList.add('speaking');
                 speechStatus.textContent = 'Playing question...';
                 
-                // STATE CHANGE: AI stops "speaking" when audio ends
                 audioPlayer.onended = function() {
-                    interviewerBox.classList.remove('speaking'); // ADDED THIS
+                    interviewerBox.classList.remove('speaking');
                     console.log('Question audio ended. Starting speech recognition...');
                     answerTextarea.value = '';
                     finalTranscript = '';
                     if (recognition) {
-                        recognition.start(); // This will trigger onstart and the "listening" state
+                        recognition.start();
                     }
                 };
             }).catch(function(error) {
@@ -392,19 +393,17 @@
                 submitButton.disabled = false;
             });
         } else {
-            // Case where no audio file exists (e.g. page refresh on error)
             answerTextarea.disabled = false;
             submitButton.disabled = false;
             if (recognition) {
                 speechStatus.textContent = 'Ready for your answer.';
                 answerTextarea.value = '';
                 finalTranscript = '';
-                recognition.start(); // This will trigger onstart and the "listening" state
+                recognition.start();
             } else {
                 speechStatus.textContent = 'Speech recognition not supported. Type your answer.';
             }
         }
     });
-    // --- END: MODIFIED SCRIPT BLOCK ---
 </script>
 {% endblock %}
