@@ -367,7 +367,7 @@
                 submitButton.disabled = false;
                 answerTextarea.value = finalTranscript.trim();
                 if (!speechStatus.classList.contains('error') && finalTranscript.trim()) {
-                    let count = 10;
+                    let count = 3;
                     speechStatus.textContent = `Answer captured. Submitting in ${count}s.`;
                     autoSubmitTimer = setInterval(() => {
                         count--;
