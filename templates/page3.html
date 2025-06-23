@@ -173,14 +173,22 @@
           <p class="score-box">Average Score: <span class="score-highlight">{{ average_score|round(1) }}/10</span></p>
           <p class="score-box">Percentage Score: <span class="score-highlight">{{ percentage_score|round(1) }}%</span></p>
           <p class="mt-4 fs-5">{{ final_message }}</p>
-          <hr />
-          <h4 class="mt-4">Feedback Summary:</h4>
+
+          <!-- START: MODIFIED SECTION -->
+          <hr class="my-4"/>
+          <a href="{{ url_for('show_dashboard') }}" class="btn btn-primary btn-lg">View Full Analytics Dashboard</a>
+          <a href="{{ url_for('page1') }}" class="btn btn-secondary btn-lg">Start New Interview</a>
+          <!-- END: MODIFIED SECTION -->
+
+          <h4 class="mt-5">Quick Feedback Summary:</h4>
           <ul class="list-group text-start">
             {% for score, feedback in summary_data %}
               <li class="list-group-item">
                 <strong>Score:</strong> {{ score|round(1) }} <br />
                 {% if feedback %}<em>{{ feedback }}</em>{% else %}<em>No detailed feedback provided.</em>{% endif %}
               </li>
+            {% else %}
+               <li class="list-group-item">No questions were answered during the interview.</li>
             {% endfor %}
           </ul>
         </div>
@@ -198,7 +206,6 @@
 
         <h2 class="text-primary mb-3">Hi {{ candidate_name }}, here's your question:</h2>
         
-        <!-- MODIFIED FOR TYPEWRITER EFFECT -->
         <p id="questionText" data-question="{{ question }}" class="mb-4 fw-semibold" style="min-height: 50px;"></p>
 
         {% if audio_file_url %}
@@ -233,47 +240,61 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // --- NEW TYPEWRITER EFFECT SCRIPT ---
         const questionElement = document.getElementById('questionText');
+        const audioPlayer = document.getElementById('questionAudio');
+        const answerTextarea = document.getElementById('answer');
+        const submitButton = document.getElementById('submitButton');
+        const interviewerBox = document.getElementById('interviewerBox');
+
+        // --- NEW TYPEWRITER EFFECT SCRIPT ---
         if (questionElement && questionElement.dataset.question) {
             const fullQuestionText = questionElement.getAttribute('data-question');
             let charIndex = 0;
-            questionElement.textContent = ''; // Ensure the element starts empty
+            questionElement.textContent = ''; 
 
             function typeCharacter() {
                 if (charIndex < fullQuestionText.length) {
                     questionElement.textContent += fullQuestionText.charAt(charIndex);
                     charIndex++;
-                    setTimeout(typeCharacter, 40); // Adjust typing speed here (40ms is a good start)
+                    setTimeout(typeCharacter, 30); // Typing speed
+                } else {
+                    // When typing is done, play the audio if it exists.
+                    if (audioPlayer) {
+                         audioPlayer.play().then(() => {
+                            interviewerBox.classList.add('speaking');
+                            speechStatus.textContent = 'Playing question...';
+                         }).catch(error => {
+                            console.warn("Autoplay prevented:", error);
+                            // Enable controls if audio fails to play
+                            enableAnswerControls(); 
+                         });
+                    } else {
+                         // If no audio, enable controls immediately
+                         enableAnswerControls();
+                    }
                 }
             }
-            typeCharacter(); // Start the typing animation
+            if (fullQuestionText) typeCharacter();
         }
-        // --- END OF NEW SCRIPT ---
 
-        // Progress bar script
         const progressBar = document.getElementById('progressBarFill');
         if (progressBar) {
-            const progressPercentage = progressBar.getAttribute('data-progress');
-            progressBar.style.width = progressPercentage + '%';
+            progressBar.style.width = progressBar.getAttribute('data-progress') + '%';
         }
 
-        // --- All other JavaScript remains unchanged ---
-        const interviewerBox = document.getElementById('interviewerBox');
+        // --- OTHER JAVASCRIPT ---
         const videoElement = document.getElementById('userVideo');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
         const answerForm = document.getElementById('answerForm'); 
         let autoSubmitTimer;
 
-        // Webcam Access
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-                .then(function(stream) {
+                .then(stream => {
                     videoElement.srcObject = stream;
                     videoElement.style.display = 'block';
                     videoPlaceholder.style.display = 'none';
-                })
-                .catch(function(error) {
+                }).catch(error => {
                     console.error("Error accessing webcam: ", error);
                     videoElement.style.display = 'none';
                     videoPlaceholder.style.display = 'block';
@@ -284,15 +305,19 @@
             videoPlaceholder.style.display = 'block';
         }
 
-        const audioPlayer = document.getElementById('questionAudio');
-        const answerTextarea = document.getElementById('answer');
         const speechStatus = document.getElementById('speechStatus');
-        const submitButton = document.getElementById('submitButton');
-        
         let recognition;
         let finalTranscript = '';
-        let silenceTimeout;
-        let noSpeechTimeout;
+
+        function enableAnswerControls() {
+            if(recognition) {
+                recognition.start();
+            } else {
+                answerTextarea.disabled = false;
+                submitButton.disabled = false;
+                speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
+            }
+        }
 
         if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -300,123 +325,75 @@
             recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'en-US';
+            
+            let silenceTimeout, noSpeechTimeout;
 
-            recognition.onstart = function() {
+            recognition.onstart = () => {
                 interviewerBox.classList.add('listening');
-                speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10 seconds of silence.';
-                speechStatus.classList.add('recording');
+                speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10s of silence.';
+                speechStatus.className = 'recording';
                 answerTextarea.disabled = false;
                 answerTextarea.placeholder = 'Start speaking, or type your answer here...';
                 answerTextarea.focus();
-                noSpeechTimeout = setTimeout(() => {
-                    speechStatus.textContent = 'No speech detected. Timed out.';
-                    recognition.stop();
-                }, 15000); 
-            };
-
-            recognition.onresult = function(event) {
-                clearTimeout(noSpeechTimeout);
-                clearTimeout(silenceTimeout);
-                silenceTimeout = setTimeout(() => { recognition.stop(); }, 10000);
-                let interimTranscript = '';
-                finalTranscript = '';
-                for (let i = 0; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript + ' ';
-                    } else {
-                        interimTranscript += event.results[i][0].transcript;
-                    }
-                }
-                answerTextarea.value = finalTranscript + interimTranscript;
+                noSpeechTimeout = setTimeout(() => { if(recognition) recognition.stop(); }, 15000); 
             };
             
-            recognition.onerror = function(event) {
-                interviewerBox.classList.remove('listening');
-                clearTimeout(silenceTimeout);
+            recognition.onresult = (event) => {
                 clearTimeout(noSpeechTimeout);
-                speechStatus.textContent = `Error: ${event.error}. You can type your answer.`;
-                speechStatus.classList.remove('recording');
-                speechStatus.classList.add('error');
+                clearTimeout(silenceTimeout);
+                silenceTimeout = setTimeout(() => { if(recognition) recognition.stop(); }, 10000);
+                let interim = ''; finalTranscript = '';
+                for (let i = 0; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript + ' ';
+                    else interim += event.results[i][0].transcript;
+                }
+                answerTextarea.value = finalTranscript + interim;
+            };
+
+            recognition.onerror = (event) => {
+                interviewerBox.classList.remove('listening');
+                speechStatus.textContent = `Error: ${event.error}. Please type your answer.`;
+                speechStatus.className = 'error';
                 answerTextarea.disabled = false;
                 submitButton.disabled = false;
-                if (event.error === 'not-allowed') {
-                    speechStatus.textContent = 'Microphone access denied. Please allow microphone access.';
-                }
             };
-            
-            recognition.onend = function() {
+
+            recognition.onend = () => {
                 interviewerBox.classList.remove('listening');
                 clearTimeout(silenceTimeout);
                 clearTimeout(noSpeechTimeout);
                 speechStatus.classList.remove('recording');
                 submitButton.disabled = false;
-                const finalAnswer = finalTranscript.trim();
-                answerTextarea.value = finalAnswer;
-
-                if (speechStatus.classList.contains('error')) {
-                    // Do nothing on error
-                } else if (finalAnswer) {
-                    let countdown = 10;
-                    speechStatus.textContent = `Answer captured. Submitting in ${countdown}s. Review or submit now.`;
-
+                answerTextarea.value = finalTranscript.trim();
+                if (!speechStatus.classList.contains('error') && finalTranscript.trim()) {
+                    let count = 10;
+                    speechStatus.textContent = `Answer captured. Submitting in ${count}s.`;
                     autoSubmitTimer = setInterval(() => {
-                        countdown--;
-                        speechStatus.textContent = `Answer captured. Submitting in ${countdown}s. Review or submit now.`;
-                        if (countdown <= 0) {
+                        count--;
+                        speechStatus.textContent = `Answer captured. Submitting in ${count}s.`;
+                        if (count <= 0) {
                             clearInterval(autoSubmitTimer);
                             submitButton.click(); 
                         }
                     }, 1000);
                 } else {
-                    speechStatus.textContent = 'Recording finished. No answer detected. You can type or submit manually.';
+                    speechStatus.textContent = 'Recording finished. You can type or submit manually.';
                 }
             };
-        } else {
-            answerTextarea.disabled = false;
-            submitButton.disabled = false;
-            speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
-            speechStatus.classList.add('error');
         }
 
         if (answerForm) {
             answerForm.addEventListener('submit', () => {
                 clearInterval(autoSubmitTimer);
-                interviewerBox.classList.remove('speaking', 'listening');
-                interviewerBox.classList.add('thinking');
+                interviewerBox.className = 'thinking';
             });
         }
         
         if (audioPlayer) {
-            audioPlayer.play().then(() => {
-                interviewerBox.classList.add('speaking');
-                speechStatus.textContent = 'Playing question...';
-                
-                audioPlayer.onended = function() {
-                    interviewerBox.classList.remove('speaking');
-                    answerTextarea.value = '';
-                    finalTranscript = '';
-                    if (recognition) {
-                        recognition.start();
-                    }
-                };
-            }).catch(function(error) {
-                console.warn("Autoplay prevented or error:", error);
-                speechStatus.textContent = 'Autoplay blocked. Manually enable audio or type answer.';
-                speechStatus.classList.add('error');
-                answerTextarea.disabled = false;
-                submitButton.disabled = false;
-            });
-        } else { // Fallback if no audio file
-            answerTextarea.disabled = false;
-            submitButton.disabled = false;
-            if (recognition) {
-                speechStatus.textContent = 'Ready for your answer.';
-                answerTextarea.value = '';
-                finalTranscript = '';
-                recognition.start();
-            } else {
-                speechStatus.textContent = 'Speech recognition not supported. Type your answer.';
-            }
+            audioPlayer.onended = () => {
+                interviewerBox.classList.remove('speaking');
+                enableAnswerControls();
+            };
         }
     });
 </script>
