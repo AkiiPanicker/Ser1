@@ -70,10 +70,12 @@ def admin_login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- HELPER FUNCTIONS (Unchanged) ---
+# --- HELPER FUNCTIONS (MODIFIED) ---
 def cleanup_session_files():
     resume_file = session.get('resume_file')
     audio_files = session.get('session_audio_files', [])
+    report_filename = session.get('report_filename') # Get the report filename
+
     if resume_file:
         try:
             resume_path = os.path.join(UPLOAD_FOLDER, resume_file)
@@ -81,6 +83,7 @@ def cleanup_session_files():
                 os.remove(resume_path)
         except Exception as e:
             print(f"Error cleaning up resume file {resume_file}: {e}")
+
     for audio_file in audio_files:
         try:
             audio_path = os.path.join(app.root_path, AUDIO_FOLDER, audio_file)
@@ -88,8 +91,17 @@ def cleanup_session_files():
                 os.remove(audio_path)
         except Exception as e:
             print(f"Error cleaning up audio file {audio_file}: {e}")
+
+    if report_filename: # Add cleanup logic for the PDF report
+        try:
+            report_path = os.path.join(REPORTS_FOLDER, report_filename)
+            if os.path.exists(report_path):
+                os.remove(report_path)
+        except Exception as e:
+            print(f"Error cleaning up report file {report_filename}: {e}")
+            
     # Don't pop from session here, let session.clear() handle it
-    
+
 def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, interview_details):
     pdf_filename = f"Summary_{candidate_name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}.pdf"
     filepath = os.path.join(REPORTS_FOLDER, pdf_filename)
@@ -135,7 +147,7 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
         return None
 
 def send_email_with_pdf(recipient_email, subject, body, pdf_filepath):
-    # This function is unchanged
+    # This function is MODIFIED to no longer delete the PDF
     message = MIMEMultipart()
     message["From"] = SENDER_EMAIL
     message["To"] = recipient_email
@@ -153,7 +165,7 @@ def send_email_with_pdf(recipient_email, subject, body, pdf_filepath):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.sendmail(SENDER_EMAIL, recipient_email, message.as_string())
-            if os.path.exists(pdf_filepath): os.remove(pdf_filepath)
+            # THE FILE IS NO LONGER DELETED HERE. It will be cleaned up on the next session.
             return True
     except Exception as e:
         print(f"Error sending email: {e}")
@@ -178,55 +190,39 @@ def text_to_speech(text, filename):
         print(f"Error converting text to speech: {e}")
         return False
         
-# --- START: NEW FUNCTION FOR DASHBOARD ANALYTICS ---
 def generate_dashboard_analytics(interview_details):
-    """Analyzes the full interview transcript to generate skills data for the dashboard."""
+    # This function is unchanged
     interview_transcript = ""
     for detail in interview_details:
         interview_transcript += f"Q: {detail['question']}\nA: {detail['answer']}\n\n"
-    
     SKILLS_TO_EVALUATE = ["Communication", "Technical Knowledge", "Problem-Solving", "Relevant Experience", "Proactivity"]
-
     skills_prompt = f"""
     Based on the interview transcript below, evaluate the candidate's skills on a scale of 1 to 10 for each category: {', '.join(SKILLS_TO_EVALUATE)}.
-
     Your output MUST BE a single, valid JSON object. Do not include explanations, notes, or markdown formatting like ```json.
-    The keys should be the skill names and the values should be a number from 1 to 10.
-
     Example:
     {{
-      "Communication": 8,
-      "Technical Knowledge": 6.5,
-      "Problem-Solving": 9,
-      "Relevant Experience": 7,
-      "Proactivity": 8
+      "Communication": 8, "Technical Knowledge": 6.5, "Problem-Solving": 9, "Relevant Experience": 7, "Proactivity": 8
     }}
-
     Interview Transcript:
     ---
     {interview_transcript}
     ---
     """
-    
     try:
-        # Use a model good for analysis, gemini-pro is a solid choice.
         analysis_model = genai.GenerativeModel('gemini-pro')
         response = analysis_model.generate_content(skills_prompt)
-        # Clean response and parse JSON
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
         skills_data = json.loads(cleaned_response)
-        # Validate that all skills are present, add default if not.
         for skill in SKILLS_TO_EVALUATE:
             if skill not in skills_data:
                 skills_data[skill] = 0
         return skills_data
     except (json.JSONDecodeError, Exception) as e:
         print(f"Error generating or parsing skills analysis from Gemini: {e}")
-        # Return a default dictionary on failure so the dashboard doesn't crash.
         return {skill: 0 for skill in SKILLS_TO_EVALUATE}
 
-# --- MODIFIED: `conduct_interview_step` function is unchanged ---
 def conduct_interview_step(role_system_prompt, resume_text, interview_history, candidate_answer, question_num):
+    # This function is unchanged
     score, feedback = None, None
     model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=role_system_prompt)
     if candidate_answer.strip() != "":
@@ -244,14 +240,12 @@ def conduct_interview_step(role_system_prompt, resume_text, interview_history, c
     except Exception: next_question = "An error occurred. Please refresh."
     return next_question, score, feedback
 
-# --- MODIFIED ROUTE ---
 @app.route('/', methods=['GET', 'POST'])
 def page1():
     if request.method == 'POST':
         # Clean up files and session data from any *previous* interview.
         cleanup_session_files()
         session.clear()
-
         candidate_name = request.form.get('candidate_name', '').strip()
         if not candidate_name:
             flash("Please enter a candidate name.")
@@ -260,13 +254,11 @@ def page1():
         return redirect(url_for('upload_resume'))
     return render_template('page1.html')
 
-# --- MODIFIED `upload_resume` is unchanged in its logic ---
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_resume():
     if 'candidate_name' not in session:
         flash("Please enter candidate name first.")
         return redirect(url_for('page1'))
-
     db = get_db()
     if request.method == 'POST':
         role_id = request.form.get('role_id')
@@ -310,7 +302,6 @@ def upload_resume():
         session['interview_finished'] = False
         session['session_audio_files'] = []
         return redirect(url_for('interview'))
-    
     roles = db.execute('SELECT id, name FROM roles ORDER BY name').fetchall()
     return render_template('page2.html', roles=roles)
 
@@ -322,7 +313,6 @@ def interview():
         return redirect(url_for('page1'))
 
     if session.get('interview_finished') and request.method == 'GET':
-        # This block now just renders the final summary page which links to the dashboard.
         summary_data_zip = zip(session.get('scores', []), session.get('feedbacks', []))
         return render_template('page3.html',
             interview_finished=True,
@@ -330,9 +320,10 @@ def interview():
             percentage_score=session.get('final_perc_score', 0),
             final_message=session.get('final_message', 'Interview complete.'),
             summary_data=summary_data_zip,
-            candidate_name=session.get('candidate_name', 'Candidate'))
+            candidate_name=session.get('candidate_name', 'Candidate'),
+            report_filename=session.get('report_filename') # Pass filename to template
+        )
 
-    # Get role details from DB
     db = get_db()
     role = db.execute('SELECT system_prompt FROM roles WHERE id = ?', (session['selected_role_id'],)).fetchone()
     if not role:
@@ -345,18 +336,14 @@ def interview():
     if 'resume_file' in session:
         resume_path = os.path.join(UPLOAD_FOLDER, session['resume_file'])
         if os.path.exists(resume_path):
-            with open(resume_path, 'r', encoding='utf-8') as f:
-                resume_text = f.read()
+            with open(resume_path, 'r', encoding='utf-8') as f: resume_text = f.read()
 
     if request.method == 'POST':
         is_finished = 'end_interview' in request.form or session.get('question_num', 1) > MAX_QUESTIONS
-
-        # --- EVALUATE CURRENT ANSWER ---
         candidate_answer = request.form.get('answer', '').strip()
         question_num = session.get('question_num', 1)
         interview_history = session.get('interview_history', [])
         
-        # We always evaluate the last answer before moving on or finishing
         if candidate_answer:
             _, score, feedback = conduct_interview_step(role_system_prompt, resume_text, interview_history, candidate_answer, question_num)
             last_question_text = interview_history[-1] if interview_history else "N/A"
@@ -370,7 +357,6 @@ def interview():
         if is_finished:
             session['interview_finished'] = True
             
-            # --- START: FINALIZATION & ANALYTICS LOGIC ---
             scores = session.get('scores', [])
             avg_score = sum(scores) / len(scores) if scores else 0
             perc_score = (avg_score / 10) * 100
@@ -381,42 +367,37 @@ def interview():
                 elif avg_score > 4: final_message = "Fair performance, with room for improvement."
                 else: final_message = "Needs significant improvement."
 
-            # Structure data for analytics and PDF
             structured_interview_details = []
             for q, a, s, f in zip(session.get('full_questions',[]), session.get('candidate_answers',[]), scores, session.get('feedbacks',[])):
                  structured_interview_details.append({'question': q, 'answer': a, 'score': s, 'feedback': f})
 
-            # Generate new analytics data for the dashboard
             skills_data = generate_dashboard_analytics(structured_interview_details)
             
-            # Store all final data in the session for the summary and dashboard pages
             session['final_avg_score'] = avg_score
             session['final_perc_score'] = perc_score
             session['final_message'] = final_message
             session['structured_interview_details'] = structured_interview_details
             session['skills_data'] = skills_data
-            session['line_chart_scores'] = scores # Store for line chart
+            session['line_chart_scores'] = scores
 
-            # Generate and send the PDF summary report
             generated_pdf_filepath = create_summary_pdf(session['candidate_name'], avg_score, perc_score, final_message, structured_interview_details)
             if generated_pdf_filepath:
+                session['report_filename'] = os.path.basename(generated_pdf_filepath)
                 email_body = f"Please find the interview summary for {session['candidate_name']} attached."
                 send_email_with_pdf(RECIPIENT_EMAIL, f"Interview Summary: {session['candidate_name']}", email_body, generated_pdf_filepath)
 
-            # NOTE: We no longer call cleanup_session_files() here.
             session.modified = True
             
-            # Render the final summary page, which will link to the new dashboard
             return render_template('page3.html',
                 interview_finished=True,
                 average_score=avg_score,
                 percentage_score=perc_score,
                 final_message=final_message,
                 summary_data=zip(scores, session.get('feedbacks', [])),
-                candidate_name=session['candidate_name'])
-            # --- END: FINALIZATION LOGIC ---
+                candidate_name=session['candidate_name'],
+                report_filename=session.get('report_filename') # Pass filename to template
+            )
 
-        # --- GET NEXT QUESTION ---
         next_question, _, _ = conduct_interview_step(role_system_prompt, resume_text, session['interview_history'], "", session['question_num'])
         session['interview_history'].append(f"Question {session['question_num']}: {next_question}")
         session['question_num'] += 1
@@ -425,7 +406,6 @@ def interview():
         if text_to_speech(next_question, filename):
             session['audio_filename'] = filename
             session.setdefault('session_audio_files', []).append(filename)
-        
         current_question = next_question
         
     else:  # GET request for the first question
@@ -443,8 +423,8 @@ def interview():
     
     return render_template('page3.html',
                            question=current_question,
-                           last_score=session.get('scores', [])[-1] if session.get('scores') and request.method == 'POST' and not is_finished else None,
-                           last_feedback=session.get('feedbacks', [])[-1] if session.get('feedbacks') and request.method == 'POST' and not is_finished else None,
+                           last_score=session.get('scores', [])[-1] if session.get('scores') and request.method == 'POST' else None,
+                           last_feedback=session.get('feedbacks', [])[-1] if session.get('feedbacks') and request.method == 'POST' else None,
                            question_number=display_question_num,
                            max_questions=MAX_QUESTIONS,
                            candidate_name=session.get('candidate_name', 'Candidate'),
@@ -452,7 +432,23 @@ def interview():
                            audio_file_url=url_for('static', filename=f'audio/{session.get("audio_filename")}') if session.get('audio_filename') else None)
 
 
-# --- START: NEW DASHBOARD ROUTE ---
+# --- START: NEW DOWNLOAD ROUTE ---
+@app.route('/download_report/<path:filename>')
+def download_report(filename):
+    # Security check: only allow download if the filename matches the one in the user's session.
+    # This prevents users from guessing filenames and downloading other reports.
+    if 'report_filename' not in session or session['report_filename'] != filename:
+        flash("No report available for download or permission denied.", "danger")
+        return redirect(url_for('page1'))
+    
+    # Use send_from_directory for secure file serving
+    try:
+        return send_from_directory(REPORTS_FOLDER, filename, as_attachment=True)
+    except FileNotFoundError:
+        flash("Report file not found. It may have been cleaned up.", "warning")
+        return redirect(url_for('page1'))
+
+# --- All other routes below are unchanged ---
 @app.route('/dashboard')
 def show_dashboard():
     # Protect this route: only accessible after an interview is finished
@@ -460,7 +456,6 @@ def show_dashboard():
         flash("You must complete an interview to view the dashboard.", "warning")
         return redirect(url_for('page1'))
 
-    # Retrieve all necessary data from the session
     return render_template('dashboard.html',
         candidate_name=session.get('candidate_name', 'N/A'),
         average_score=session.get('final_avg_score', 0),
@@ -470,10 +465,7 @@ def show_dashboard():
         line_chart_scores=session.get('line_chart_scores', []),
         interview_details=session.get('structured_interview_details', [])
     )
-# --- END: NEW DASHBOARD ROUTE ---
 
-
-# --- ADMIN ROUTES (Unchanged) ---
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
