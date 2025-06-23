@@ -1,0 +1,213 @@
+{% extends 'layout.html' %}
+{% block title %}Interview Dashboard | {{ candidate_name }}{% endblock %}
+
+{% block content %}
+<style>
+    body {
+        background-color: #f4f7fc;
+        color: #333;
+    }
+    .metric-card {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        text-align: center;
+        margin-bottom: 1.5rem;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    }
+    .metric-card .icon {
+        font-size: 2rem;
+        color: #6a11cb;
+    }
+    .metric-card h3 {
+        color: #555;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    .metric-card .value {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #2575fc;
+    }
+    .chart-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        height: 450px;
+    }
+    .accordion-button {
+        background-color: #f8f9fa;
+        color: #333;
+        font-weight: 600;
+    }
+    .accordion-button:not(.collapsed) {
+        background-color: #e9ecef;
+        color: #6a11cb;
+        box-shadow: inset 0 -1px 0 rgba(0,0,0,.125);
+    }
+    .accordion-body {
+        background-color: #fff;
+    }
+</style>
+
+<div class="container-fluid py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h1 class="mb-1">Interview Dashboard</h1>
+        <h2 class="text-muted h4">Analysis for <strong>{{ candidate_name }}</strong></h2>
+      </div>
+      <a href="{{ url_for('page1') }}" class="btn btn-outline-primary">Start New Interview</a>
+    </div>
+
+
+    <!-- Key Metrics Grid -->
+    <div class="row">
+        <div class="col-md-4">
+            <div class="metric-card">
+                <h3>Average Score</h3>
+                <p class="value">{{ average_score|round(1) }}/10</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-card">
+                <h3>Percentage Score</h3>
+                <p class="value">{{ percentage_score|round(1) }}%</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-card">
+                <h3>Final Verdict</h3>
+                <p class="value" style="font-size: 1.4rem; padding-top: 1.1rem; color: #1c1f26;">{{ final_verdict }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mt-4">
+        <div class="col-lg-6 mb-4">
+            <div class="chart-container d-flex flex-column">
+                <h4 class="text-center mb-3">Candidate Skills Radar</h4>
+                <div class="flex-grow-1" style="position: relative;">
+                    <canvas id="skillsRadarChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-4">
+            <div class="chart-container d-flex flex-column">
+                <h4 class="text-center mb-3">Performance Over Time</h4>
+                <div class="flex-grow-1" style="position: relative;">
+                     <canvas id="performanceLineChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Accordion for Details -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <h3 class="mb-3">Detailed Interview Breakdown</h3>
+            <div class="accordion" id="interviewAccordion">
+            {% for item in interview_details %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="heading-{{ loop.index }}">
+                        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ loop.index }}">
+                            Question {{ loop.index }} (Score: {{ item.score|round(1) }})
+                        </button>
+                    </h2>
+                    <div id="collapse-{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#interviewAccordion">
+                        <div class="accordion-body">
+                            <strong>Question Asked:</strong>
+                            <p class="text-muted">{{ item.question }}</p>
+                            <strong>Candidate's Answer:</strong>
+                            <p class="fst-italic" style="color: #444;">"{{ item.answer }}"</p>
+                            <strong>AI Feedback:</strong>
+                            <p class="text-primary">{{ item.feedback }}</p>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="card"><div class="card-body text-center text-muted">No detailed interview data found.</div></div>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Data from Flask ---
+    const skillsData = JSON.parse('{{ skills_data | tojson | safe }}');
+    const performanceScores = JSON.parse('{{ line_chart_scores | tojson | safe }}');
+    const questionLabels = Array.from({length: performanceScores.length}, (_, i) => `Q${i + 1}`);
+
+    // --- 1. Skills Radar Chart ---
+    const radarCtx = document.getElementById('skillsRadarChart')?.getContext('2d');
+    if (radarCtx && skillsData) {
+        new Chart(radarCtx, {
+            type: 'radar',
+            data: {
+                labels: Object.keys(skillsData),
+                datasets: [{
+                    label: 'Candidate Score',
+                    data: Object.values(skillsData),
+                    fill: true,
+                    backgroundColor: 'rgba(37, 117, 252, 0.2)',
+                    borderColor: 'rgb(37, 117, 252)',
+                    pointBackgroundColor: 'rgb(37, 117, 252)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgb(37, 117, 252)'
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        angleLines: { color: 'rgba(0, 0, 0, 0.1)' },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        pointLabels: { font: { size: 13, weight: '600' } },
+                        suggestedMin: 0,
+                        suggestedMax: 10,
+                        ticks: { backdropColor: 'rgba(255,255,255,0.7)', stepSize: 2 }
+                    }
+                }
+            }
+        });
+    }
+
+    // --- 2. Performance Line Chart ---
+    const lineCtx = document.getElementById('performanceLineChart')?.getContext('2d');
+    if (lineCtx && performanceScores) {
+        new Chart(lineCtx, {
+            type: 'line',
+            data: {
+                labels: questionLabels,
+                datasets: [{
+                    label: 'Score per Question',
+                    data: performanceScores,
+                    fill: true,
+                    borderColor: 'rgb(106, 17, 203)',
+                    backgroundColor: 'rgba(106, 17, 203, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, suggestedMax: 10 } }
+            }
+        });
+    }
+});
+</script>
+
+{% endblock %}
