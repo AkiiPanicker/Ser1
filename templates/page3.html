@@ -174,10 +174,15 @@
           <p class="score-box">Percentage Score: <span class="score-highlight">{{ percentage_score|round(1) }}%</span></p>
           <p class="mt-4 fs-5">{{ final_message }}</p>
 
-          <!-- START: MODIFIED SECTION -->
           <hr class="my-4"/>
-          <a href="{{ url_for('show_dashboard') }}" class="btn btn-primary btn-lg">View Full Analytics Dashboard</a>
-          <a href="{{ url_for('page1') }}" class="btn btn-secondary btn-lg">Start New Interview</a>
+          <!-- START: MODIFIED SECTION -->
+          <div class="d-flex justify-content-center gap-2 flex-wrap">
+              <a href="{{ url_for('show_dashboard') }}" class="btn btn-primary btn-lg">View Full Analytics Dashboard</a>
+              {% if report_filename %}
+                <a href="{{ url_for('download_report', filename=report_filename) }}" class="btn btn-success btn-lg">Download PDF Report</a>
+              {% endif %}
+              <a href="{{ url_for('page1') }}" class="btn btn-secondary btn-lg">Start New Interview</a>
+          </div>
           <!-- END: MODIFIED SECTION -->
 
           <h4 class="mt-5">Quick Feedback Summary:</h4>
@@ -239,6 +244,7 @@
 </div>
 
 <script>
+    // All JavaScript is unchanged.
     document.addEventListener('DOMContentLoaded', function() {
         const questionElement = document.getElementById('questionText');
         const audioPlayer = document.getElementById('questionAudio');
@@ -246,7 +252,6 @@
         const submitButton = document.getElementById('submitButton');
         const interviewerBox = document.getElementById('interviewerBox');
 
-        // --- NEW TYPEWRITER EFFECT SCRIPT ---
         if (questionElement && questionElement.dataset.question) {
             const fullQuestionText = questionElement.getAttribute('data-question');
             let charIndex = 0;
@@ -256,20 +261,17 @@
                 if (charIndex < fullQuestionText.length) {
                     questionElement.textContent += fullQuestionText.charAt(charIndex);
                     charIndex++;
-                    setTimeout(typeCharacter, 30); // Typing speed
+                    setTimeout(typeCharacter, 30);
                 } else {
-                    // When typing is done, play the audio if it exists.
                     if (audioPlayer) {
                          audioPlayer.play().then(() => {
                             interviewerBox.classList.add('speaking');
                             speechStatus.textContent = 'Playing question...';
                          }).catch(error => {
                             console.warn("Autoplay prevented:", error);
-                            // Enable controls if audio fails to play
                             enableAnswerControls(); 
                          });
                     } else {
-                         // If no audio, enable controls immediately
                          enableAnswerControls();
                     }
                 }
@@ -282,7 +284,6 @@
             progressBar.style.width = progressBar.getAttribute('data-progress') + '%';
         }
 
-        // --- OTHER JAVASCRIPT ---
         const videoElement = document.getElementById('userVideo');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
         const answerForm = document.getElementById('answerForm'); 
