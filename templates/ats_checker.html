@@ -1,0 +1,188 @@
+{% extends 'layout.html' %}
+{% block title %}Advanced ATS Resume Checker{% endblock %}
+
+{% block styles %}
+<style>
+  /* Base styles (unchanged) */
+  body {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: #fff;
+  }
+  .card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #343a40;
+  }
+  .form-label, .text-muted { color: #495057 !important; }
+  h2, h3, h5 { color: #6a11cb; }
+  .btn-analyze { background: #6a11cb; color: white; font-weight: 600; transition: all 0.3s ease; border: none; }
+  .btn-analyze:hover { background: #5a0eae; transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+  
+  .recommendations-list { list-style-type: none; padding-left: 0; }
+  .recommendations-list li { background-color: rgba(248,249,250, 0.8); padding: 1rem; margin-bottom: 0.75rem; border-radius: 0.5rem; border-left: 4px solid #2575fc; font-weight: 500; color: #343a40; }
+  
+  .keyword-list span.badge { font-size: 0.9em; padding: 0.5em 0.8em; margin-right: 5px; margin-bottom: 5px; font-weight: 500; border: 1px solid transparent; }
+  .badge-matched { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
+  .badge-missing { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+
+  /* --- NEW STYLES for highlighting and new elements --- */
+  .highlight-green { background-color: #d1e7dd; padding: 0 2px; border-radius: 3px; cursor: pointer; }
+  .highlight-red { background-color: #f8d7da; padding: 0 2px; border-radius: 3px; cursor: pointer; }
+  .highlight-blue { background-color: #cff4fc; padding: 0 2px; border-radius: 3px; cursor: pointer; }
+  
+  .resume-analysis-box {
+      background-color: #f8f9fa;
+      border: 1px solid #dee2e6;
+      padding: 1.5rem;
+      border-radius: .5rem;
+      font-family: 'Courier New', Courier, monospace;
+      line-height: 1.6;
+      max-height: 500px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+  }
+
+  .ai-suggestions-box {
+      background-color: #e2d9f3;
+      border-left: 5px solid #6a11cb;
+      padding: 1.5rem;
+      border-radius: .5rem;
+  }
+
+  .btn-practice-interview {
+    background: linear-gradient(45deg, #1d976c, #93f9b9);
+    color: #fff;
+    font-weight: bold;
+    border: none;
+    transition: all 0.3s ease;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+  }
+  .btn-practice-interview:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(29, 151, 108, 0.4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-xl-11">
+
+      <!-- Upload Form Card -->
+      <div class="card p-4 p-md-5 mb-5">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold">Advanced ATS Resume Checker</h2>
+            <p class="text-muted">Analyze your resume against a job description to get AI-powered feedback and identify areas for improvement.</p>
+        </div>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data">
+          <div class="mb-4">
+              <label for="resume_file" class="form-label fw-bold">1. Upload Your Resume (.pdf, .docx, .txt)</label>
+              <input type="file" class="form-control form-control-lg" id="resume_file" name="resume_file" accept=".pdf,.docx,.txt" required>
+          </div>
+          <div class="mb-4">
+              <label for="job_description" class="form-label fw-bold">2. Paste Job Description (Highly Recommended for Best Results)</label>
+              <textarea class="form-control" id="job_description" name="job_description" rows="5" placeholder="Paste the full job description here..."></textarea>
+          </div>
+          <div class="d-grid">
+             <button type="submit" class="btn btn-analyze btn-lg">Analyze My Resume</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Results Section -->
+      {% if results %}
+      <div class="card p-4 p-md-5 results-section">
+        <h2 class="fw-bold text-center mb-4">Your Analysis Report</h2>
+        
+        <div class="row align-items-center mb-5">
+          <div class="col-lg-7 text-center">{{ gauge_chart|safe }}</div>
+          <div class="col-lg-5 text-center">{{ radar_chart|safe }}</div>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-12">
+                <h3>💡 Actionable Recommendations</h3>
+                {% if recommendations %}
+                  <ul class="recommendations-list mt-3">
+                  {% for rec in recommendations %}
+                    <li>{{ rec }}</li>
+                  {% endfor %}
+                  </ul>
+                {% endif %}
+
+                <!-- --- NEW: AI Generated Suggestions --- -->
+                {% if ai_suggestions %}
+                <div class="ai-suggestions-box mt-4">
+                    <h5 class="fw-bold">✨ AI-Powered Suggestions</h5>
+                    <p>{{ ai_suggestions|safe|nl2br }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <hr class="my-5">
+
+        <!-- --- NEW: In-line Resume Analysis --- -->
+        <div class="row">
+          <div class="col-lg-12">
+            <h3 class="mb-3">📄 Live Resume Analysis</h3>
+            <p class="text-muted">Hover over highlighted text to see specific feedback. <span class="highlight-green">Green</span> is for quantified metrics, <span class="highlight-blue">Blue</span> for strong action verbs, and <span class="highlight-red">Red</span> for passive phrases to improve.</p>
+            <div class="resume-analysis-box">
+              {{ highlighted_resume|safe }}
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-5">
+        
+        <div class="row">
+          <div class="col-lg-7">
+              <h3 class="mb-3">🔑 Keyword Analysis</h3>
+              <p class="text-muted">{{ results.feedback if results.feedback else 'Matching against job description...' }}</p>
+              
+              {% if results.matched_keywords %}
+                <h5 class="mt-3 fs-6 fw-bold">Matched Keywords</h5>
+                <div class="keyword-list">
+                  {% for kw in results.matched_keywords|sort|list|batch(4)|first %}<span class="badge badge-matched">{{ kw }}</span>{% endfor %}
+                  {% if results.matched_keywords|length > 4 %} <span class="badge badge-matched">+{{ results.matched_keywords|length - 4 }} more</span>{% endif %}
+                </div>
+              {% endif %}
+
+              {% if results.missing_keywords %}
+                <h5 class="mt-4 fs-6 fw-bold">Top Missing Keywords to Consider</h5>
+                <div class="keyword-list">
+                  {% for kw in results.missing_keywords %}<span class="badge badge-missing">{{ kw }}</span>{% endfor %}
+                </div>
+              {% endif %}
+          </div>
+          
+          <!-- --- NEW: Integrated Interview Practice Button --- -->
+          <div class="col-lg-5 d-flex align-items-center justify-content-center mt-5 mt-lg-0">
+              <div class="text-center">
+                  <h4 class="fw-bold" style="color: #1d976c;">Resume Optimized?</h4>
+                  <p class="text-muted">Take the next step and practice your interview skills. We'll use your resume and job description to ask relevant questions.</p>
+                  <a href="{{ url_for('start_interview_from_ats') }}" class="btn btn-practice-interview btn-lg px-5 py-3 mt-2">
+                    Start Mock Interview
+                  </a>
+              </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
