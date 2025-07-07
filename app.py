@@ -1,3 +1,5 @@
+# app.py
+
 import os
 import uuid
 import spacy
@@ -12,48 +14,63 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+import re
 
-# --- NEW IMPORTS ---
 import json
-import sqlite3
+import psycopg2
+import psycopg2.extras 
+import psycopg2.errors
 from werkzeug.security import check_password_hash, generate_password_hash
-# --- END NEW IMPORTS ---
+
+from werkzeug.utils import secure_filename
+from ats_calculator import AdvancedATSCalculator
+from docx import Document
 
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- Define all folders, DB, and constants --- # MODIFIED
+# --- Configuration Section ---
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'static/audio'
 REPORTS_FOLDER = 'reports'
-DATABASE = 'database.db'
+RESUME_STORAGE_FOLDER = 'resume_storage'
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:seri@localhost/interview_db") 
 MAX_QUESTIONS = 10
+ATS_UPLOAD_FOLDER = 'ats_uploads'
+os.makedirs(ATS_UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
 os.makedirs(REPORTS_FOLDER, exist_ok=True)
+os.makedirs(RESUME_STORAGE_FOLDER, exist_ok=True) 
+os.makedirs(ATS_UPLOAD_FOLDER, exist_ok=True)
+
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# Email Configuration
 SENDER_EMAIL = "akshataki7905@gmail.com"
 SENDER_APP_PASSWORD = "dwct esbd fucy nybp"
 RECIPIENT_EMAIL = "sakshamsaxenamoreyeahs@gmail.com"
 
 try:
     nlp = spacy.load("en_core_web_sm")
+    
 except OSError:
     import subprocess
     subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
     nlp = spacy.load("en_core_web_sm")
 
-# --- DATABASE HELPER FUNCTIONS (Unchanged) ---
+# --- DATABASE HELPER FUNCTIONS ---
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
+        g.db = psycopg2.connect(DATABASE_URL)
     return g.db
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.teardown_appcontext
 def close_db(e=None):
@@ -61,7 +78,7 @@ def close_db(e=None):
     if db is not None:
         db.close()
 
-# --- ADMIN AUTH DECORATOR (Unchanged) ---
+# --- ADMIN AUTH DECORATOR ---
 def admin_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -70,37 +87,53 @@ def admin_login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- HELPER FUNCTIONS (MODIFIED) ---
-def cleanup_session_files():
-    resume_file = session.get('resume_file')
-    audio_files = session.get('session_audio_files', [])
-    report_filename = session.get('report_filename') # Get the report filename
+# --- HELPER FUNCTIONS ---
+def cleanup_all_interview_artifacts(session_data):
+    """
+    Deletes ALL files associated with a completed interview session.
+    This includes the original resume, the AI summary, all audio files,
+    and the final generated PDF report. This is an aggressive cleanup
+    with corrected path handling for all directories.
+    """
+    print("--- Running aggressive cleanup for ALL interview artifacts... ---")
+    
+    files_to_delete_info = []
 
-    if resume_file:
-        try:
-            resume_path = os.path.join(UPLOAD_FOLDER, resume_file)
-            if os.path.exists(resume_path):
-                os.remove(resume_path)
-        except Exception as e:
-            print(f"Error cleaning up resume file {resume_file}: {e}")
+    # 1. Get AI summary file from /uploads
+    if session_data.get('resume_file'):
+        path = os.path.join(UPLOAD_FOLDER, session_data.get('resume_file'))
+        files_to_delete_info.append({'path': path, 'is_static': False})
+        
+    # 2. Get all audio files from /static/audio
+    for audio_file in session_data.get('session_audio_files', []):
+        path = os.path.join(AUDIO_FOLDER, audio_file)
+        files_to_delete_info.append({'path': path, 'is_static': True}) # Mark as static
+        
+    # 3. Get the original resume from /resume_storage
+    if session_data.get('original_resume_filename'):
+        path = os.path.join(RESUME_STORAGE_FOLDER, session_data.get('original_resume_filename'))
+        files_to_delete_info.append({'path': path, 'is_static': False})
 
-    for audio_file in audio_files:
-        try:
-            audio_path = os.path.join(app.root_path, AUDIO_FOLDER, audio_file)
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-        except Exception as e:
-            print(f"Error cleaning up audio file {audio_file}: {e}")
+    # 4. Get the generated PDF report from /reports
+    if session_data.get('report_filename'):
+        path = os.path.join(REPORTS_FOLDER, session_data.get('report_filename'))
+        files_to_delete_info.append({'path': path, 'is_static': False})
 
-    if report_filename: # Add cleanup logic for the PDF report
+    # Loop through the list and delete each file with the correct path logic
+    for file_info in files_to_delete_info:
         try:
-            report_path = os.path.join(REPORTS_FOLDER, report_filename)
-            if os.path.exists(report_path):
-                os.remove(report_path)
-        except Exception as e:
-            print(f"Error cleaning up report file {report_filename}: {e}")
+            # CORRECTED PATH LOGIC: Construct the absolute path based on whether it's static or not
+            full_path = os.path.join(app.root_path, file_info['path']) if file_info['is_static'] else file_info['path']
             
-    # Don't pop from session here, let session.clear() handle it
+            if os.path.exists(full_path):
+                os.remove(full_path)
+                print(f"SUCCESS: Aggressively deleted artifact: {full_path}")
+            else:
+                print(f"SKIPPING: Artifact not found at path: {full_path}")
+        except Exception as e:
+            print(f"ERROR: Could not delete artifact {file_info['path']}. Reason: {e}")
+            
+    print("--- Aggressive cleanup complete. ---")
 
 def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, interview_details):
     pdf_filename = f"Summary_{candidate_name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}.pdf"
@@ -108,9 +141,13 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # --- Report Header ---
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(0, 10, f"Interview Summary for {candidate_name}", 0, 1, 'C')
     pdf.ln(10)
+    
+    # --- Overall Results Section ---
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, "Overall Results", 0, 1, 'L')
     pdf.set_font("Arial", '', 12)
@@ -120,9 +157,12 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
     pdf.ln(5)
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
     pdf.ln(5)
+
+    # --- Detailed Breakdown Section ---
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, "Detailed Interview Breakdown", 0, 1, 'L')
     pdf.ln(2)
+    
     if not interview_details:
         pdf.set_font("Arial", 'I', 12)
         pdf.cell(0, 10, "No questions were answered to provide detailed feedback.", 0, 1, 'L')
@@ -130,15 +170,26 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
         for i, detail in enumerate(interview_details, 1):
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 8, f"Question {i} - Score: {detail['score']:.1f}/10", 0, 1, 'L')
+            
             pdf.set_font("Arial", 'B', 11)
             clean_question = detail['question'].split(":", 1)[-1].strip() if ":" in detail['question'] else detail['question']
             pdf.multi_cell(0, 6, f'Question Asked: "{clean_question}"', 0, 'L')
+            
             pdf.set_font("Arial", '', 11)
             pdf.multi_cell(0, 6, f'Candidate Answer: "{detail["answer"]}"', 0, 'L')
+            
+            # --- MODIFICATION START: Change feedback color to red ---
             pdf.set_font("Arial", 'I', 11)
+            pdf.set_text_color(220, 53, 69) # Set text color to a professional red
+            
             feedback_text = detail['feedback'] if detail['feedback'] else "No detailed feedback provided."
             pdf.multi_cell(0, 6, f'Feedback Provided: "{feedback_text}"', 0, 'L')
-            pdf.ln(8)
+            
+            pdf.set_text_color(0, 0, 0) # Reset text color back to black for the next item
+            # --- MODIFICATION END ---
+            
+            pdf.ln(8) # Add space between questions
+            
     try:
         pdf.output(filepath)
         return filepath
@@ -147,7 +198,6 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
         return None
 
 def send_email_with_pdf(recipient_email, subject, body, pdf_filepath):
-    # This function is MODIFIED to no longer delete the PDF
     message = MIMEMultipart()
     message["From"] = SENDER_EMAIL
     message["To"] = recipient_email
@@ -165,14 +215,12 @@ def send_email_with_pdf(recipient_email, subject, body, pdf_filepath):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.sendmail(SENDER_EMAIL, recipient_email, message.as_string())
-            # THE FILE IS NO LONGER DELETED HERE. It will be cleaned up on the next session.
             return True
     except Exception as e:
         print(f"Error sending email: {e}")
         return False
 
 def extract_info_with_gemini(text, model):
-    # This function is unchanged
     prompt = f"Extract the following information from the text below: Full Name, Education, Previous Experience, Useful Skills. Present the extracted information clearly. Text:\n{text}"
     try:
         response = model.generate_content(prompt)
@@ -180,7 +228,6 @@ def extract_info_with_gemini(text, model):
     except Exception as e: return f"An error occurred during information extraction: {e}"
 
 def text_to_speech(text, filename):
-    # This function is unchanged
     try:
         tts = gTTS(text=text, lang='en', slow=False)
         filepath = os.path.join(app.root_path, AUDIO_FOLDER, filename)
@@ -189,9 +236,8 @@ def text_to_speech(text, filename):
     except Exception as e:
         print(f"Error converting text to speech: {e}")
         return False
-        
+
 def generate_dashboard_analytics(interview_details):
-    # This function is unchanged
     interview_transcript = ""
     for detail in interview_details:
         interview_transcript += f"Q: {detail['question']}\nA: {detail['answer']}\n\n"
@@ -222,7 +268,6 @@ def generate_dashboard_analytics(interview_details):
         return {skill: 0 for skill in SKILLS_TO_EVALUATE}
 
 def conduct_interview_step(role_system_prompt, resume_text, interview_history, candidate_answer, question_num):
-    # This function is unchanged
     score, feedback = None, None
     model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=role_system_prompt)
     if candidate_answer.strip() != "":
@@ -240,59 +285,113 @@ def conduct_interview_step(role_system_prompt, resume_text, interview_history, c
     except Exception: next_question = "An error occurred. Please refresh."
     return next_question, score, feedback
 
+
+# --- Routes (Main application logic) ---
+
 @app.route('/', methods=['GET', 'POST'])
 def page1():
     if request.method == 'POST':
-        # Clean up files and session data from any *previous* interview.
-        cleanup_session_files()
+        # Clean up any leftover files from a previous, unfinished session.
+        cleanup_all_interview_artifacts(session.copy())
         session.clear()
+        
         candidate_name = request.form.get('candidate_name', '').strip()
+        candidate_email = request.form.get('candidate_email', '').strip()
+        candidate_phone = request.form.get('candidate_phone', '').strip()
+
+        # --- Server-side validation ---
         if not candidate_name:
-            flash("Please enter a candidate name.")
+            flash("Please enter a candidate name.", "danger")
             return redirect(url_for('page1'))
+
+        # Simple regex for email validation
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", candidate_email):
+            flash("Please enter a valid email address.", "danger")
+            return redirect(url_for('page1'))
+
+        # Simple regex for 10-digit phone number validation
+        if not re.match(r"^\d{10}$", candidate_phone):
+            flash("Please enter a valid 10-digit phone number.", "danger")
+            return redirect(url_for('page1'))
+            
         session['candidate_name'] = candidate_name
+        session['candidate_email'] = candidate_email
+        session['candidate_phone'] = candidate_phone
+        
         return redirect(url_for('upload_resume'))
+        
     return render_template('page1.html')
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_resume():
-    if 'candidate_name' not in session:
-        flash("Please enter candidate name first.")
+    if 'candidate_name' not in session or 'candidate_email' not in session:
+        flash("Please enter your full details first.", "warning")
         return redirect(url_for('page1'))
-    db = get_db()
+        
+    db_conn = get_db()
+    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute('SELECT id, name FROM roles ORDER BY name')
+        roles = cur.fetchall()
+    
     if request.method == 'POST':
         role_id = request.form.get('role_id')
-        if not role_id:
-            flash("Please select an interview role.", "warning")
-            roles = db.execute('SELECT id, name FROM roles ORDER BY name').fetchall()
-            return render_template('page2.html', roles=roles)
         uploaded_file = request.files.get('resume_file')
         job_description = request.form.get('job_description', '').strip()
+
+        if not role_id:
+            flash("Please select an interview role.", "warning")
+            return render_template('page2.html', roles=roles)
+
         if not uploaded_file and not job_description:
             flash("Please upload a resume or provide a job description.", "warning")
-            roles = db.execute('SELECT id, name FROM roles ORDER BY name').fetchall()
             return render_template('page2.html', roles=roles)
-        file_content = ""
-        if uploaded_file and uploaded_file.filename:
-            if uploaded_file.filename.lower().endswith('.pdf'):
-                try:
-                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                    for page in pdf_reader.pages:
-                        text = page.extract_text()
-                        if text: file_content += text
-                except Exception as e:
-                    flash(f"Error reading PDF: {e}")
-                    return redirect(url_for('upload_resume'))
-            else:
-                file_content = uploaded_file.read().decode('utf-8')
-        else: file_content = job_description
+            
+        selected_role_name = next((r['name'] for r in roles if str(r['id']) == str(role_id)), "General")
+        file_content_for_ai = ""
+        original_resume_filename = None
+
+        if uploaded_file and uploaded_file.filename != '':
+            if not allowed_file(uploaded_file.filename):
+                flash("Invalid file type. Please upload a PDF, DOCX, or TXT file.", "danger")
+                return render_template('page2.html', roles=roles)
+
+            original_fn = secure_filename(uploaded_file.filename)
+            unique_fn = f"{uuid.uuid4().hex[:12]}_{original_fn}"
+            filepath = os.path.join(RESUME_STORAGE_FOLDER, unique_fn)
+            uploaded_file.save(filepath)
+            original_resume_filename = unique_fn 
+
+            try:
+                if unique_fn.lower().endswith('.pdf'):
+                    with open(filepath, 'rb') as f:
+                        pdf_reader = PyPDF2.PdfReader(f)
+                        for page in pdf_reader.pages:
+                            text = page.extract_text()
+                            if text: file_content_for_ai += text
+                elif unique_fn.lower().endswith('.docx'):
+                     doc = Document(filepath)
+                     file_content_for_ai = "\n".join([para.text for para in doc.paragraphs])
+                else:
+                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        file_content_for_ai = f.read()
+            except Exception as e:
+                flash(f"Error reading the uploaded file: {e}", "danger")
+                return redirect(url_for('upload_resume'))
+        else:
+            file_content_for_ai = job_description
+        
         extraction_model = genai.GenerativeModel('gemini-1.5-flash')
-        extracted_text = extract_info_with_gemini(file_content, extraction_model)
-        unique_id = str(uuid.uuid4())
-        save_path = os.path.join(UPLOAD_FOLDER, f"{unique_id}.txt")
+        extracted_text = extract_info_with_gemini(file_content_for_ai, extraction_model)
+        
+        temp_ai_file_id = str(uuid.uuid4())
+        save_path = os.path.join(UPLOAD_FOLDER, f"{temp_ai_file_id}.txt")
         with open(save_path, 'w', encoding='utf-8') as f: f.write(extracted_text)
-        session['resume_file'] = f"{unique_id}.txt"
+        
+        session['resume_file'] = f"{temp_ai_file_id}.txt" 
         session['selected_role_id'] = role_id
+        session['selected_role_name'] = selected_role_name
+        session['original_resume_filename'] = original_resume_filename 
+
         session['interview_history'] = []
         session['scores'] = []
         session['feedbacks'] = []
@@ -301,11 +400,11 @@ def upload_resume():
         session['question_num'] = 1
         session['interview_finished'] = False
         session['session_audio_files'] = []
+
         return redirect(url_for('interview'))
-    roles = db.execute('SELECT id, name FROM roles ORDER BY name').fetchall()
+        
     return render_template('page2.html', roles=roles)
 
-# --- MAJORLY MODIFIED ROUTE ---
 @app.route('/interview', methods=['GET', 'POST'])
 def interview():
     if 'candidate_name' not in session or 'selected_role_id' not in session:
@@ -313,30 +412,34 @@ def interview():
         return redirect(url_for('page1'))
 
     if session.get('interview_finished') and request.method == 'GET':
-        summary_data_zip = zip(session.get('scores', []), session.get('feedbacks', []))
         return render_template('page3.html',
             interview_finished=True,
             average_score=session.get('final_avg_score', 0),
             percentage_score=session.get('final_perc_score', 0),
             final_message=session.get('final_message', 'Interview complete.'),
-            summary_data=summary_data_zip,
+            summary_data=zip(session.get('scores', []), session.get('feedbacks', [])),
             candidate_name=session.get('candidate_name', 'Candidate'),
-            report_filename=session.get('report_filename') # Pass filename to template
+            report_filename=session.get('report_filename')
         )
 
-    db = get_db()
-    role = db.execute('SELECT system_prompt FROM roles WHERE id = ?', (session['selected_role_id'],)).fetchone()
+    db_conn = get_db()
+    role = None
+    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute('SELECT system_prompt FROM roles WHERE id = %s', (session['selected_role_id'],))
+        role = cur.fetchone()
+    
     if not role:
         flash("The selected interview role no longer exists. Please start over.", "danger")
         session.clear()
         return redirect(url_for('page1'))
     role_system_prompt = role['system_prompt']
 
-    resume_text = ""
+    resume_text_for_ai = ""
     if 'resume_file' in session:
         resume_path = os.path.join(UPLOAD_FOLDER, session['resume_file'])
         if os.path.exists(resume_path):
-            with open(resume_path, 'r', encoding='utf-8') as f: resume_text = f.read()
+            with open(resume_path, 'r', encoding='utf-8') as f:
+                resume_text_for_ai = f.read()
 
     if request.method == 'POST':
         is_finished = 'end_interview' in request.form or session.get('question_num', 1) > MAX_QUESTIONS
@@ -345,14 +448,16 @@ def interview():
         interview_history = session.get('interview_history', [])
         
         if candidate_answer:
-            _, score, feedback = conduct_interview_step(role_system_prompt, resume_text, interview_history, candidate_answer, question_num)
+            _, score, feedback = conduct_interview_step(role_system_prompt, resume_text_for_ai, interview_history, candidate_answer, question_num)
+            
             last_question_text = interview_history[-1] if interview_history else "N/A"
-            session['interview_history'].append(f"Answer {question_num-1}: {candidate_answer}")
             if score is not None:
                 session.setdefault('full_questions', []).append(last_question_text)
                 session.setdefault('candidate_answers', []).append(candidate_answer)
                 session['scores'].append(score)
                 session['feedbacks'].append(feedback)
+            session['interview_history'].append(f"Answer {question_num-1}: {candidate_answer}")
+
 
         if is_finished:
             session['interview_finished'] = True
@@ -367,10 +472,7 @@ def interview():
                 elif avg_score > 4: final_message = "Fair performance, with room for improvement."
                 else: final_message = "Needs significant improvement."
 
-            structured_interview_details = []
-            for q, a, s, f in zip(session.get('full_questions',[]), session.get('candidate_answers',[]), scores, session.get('feedbacks',[])):
-                 structured_interview_details.append({'question': q, 'answer': a, 'score': s, 'feedback': f})
-
+            structured_interview_details = [{'question': q, 'answer': a, 'score': s, 'feedback': f} for q, a, s, f in zip(session.get('full_questions',[]), session.get('candidate_answers',[]), scores, session.get('feedbacks',[]))]
             skills_data = generate_dashboard_analytics(structured_interview_details)
             
             session['final_avg_score'] = avg_score
@@ -380,12 +482,54 @@ def interview():
             session['skills_data'] = skills_data
             session['line_chart_scores'] = scores
 
+            report_filename = None
             generated_pdf_filepath = create_summary_pdf(session['candidate_name'], avg_score, perc_score, final_message, structured_interview_details)
             if generated_pdf_filepath:
-                session['report_filename'] = os.path.basename(generated_pdf_filepath)
+                report_filename = os.path.basename(generated_pdf_filepath)
+                session['report_filename'] = report_filename
                 email_body = f"Please find the interview summary for {session['candidate_name']} attached."
-                send_email_with_pdf(RECIPIENT_EMAIL, f"Interview Summary: {session['candidate_name']}", email_body, generated_pdf_filepath)
+                email_sent = send_email_with_pdf(RECIPIENT_EMAIL, f"Interview Summary: {session['candidate_name']}", email_body, generated_pdf_filepath)
+                if email_sent:
+                    flash(f"Summary PDF for {session['candidate_name']} sent successfully.", "success")
+                else:
+                    flash("Warning: The interview summary PDF could not be sent via email.", "warning")
+            else:
+                flash("Error: Could not generate the final PDF report.", "danger")
 
+            try:
+                db_conn_save = get_db()
+                with db_conn_save.cursor() as cur:
+                    interview_data_json = json.dumps({
+                        'details': structured_interview_details,
+                        'skill_analysis': skills_data
+                    })
+                    
+                    cur.execute(
+                        """
+                        INSERT INTO interviews (candidate_name, candidate_email, candidate_phone, role_name, final_verdict, average_score, percentage_score, interview_data, resume_filename, report_filename)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            session['candidate_name'],
+                            session['candidate_email'],
+                            session['candidate_phone'],
+                            session.get('selected_role_name', 'N/A'),
+                            final_message,
+                            avg_score,
+                            perc_score,
+                            interview_data_json,
+                            session.get('original_resume_filename'),
+                            report_filename
+                        )
+                    )
+                db_conn_save.commit()
+                flash("Interview results successfully saved to the database.", "success")
+            except Exception as e:
+                db_conn_save.rollback()
+                print(f"DATABASE ERROR: Failed to save interview results. {e}")
+                flash("Error: Could not save the interview results to the database.", "danger")
+            
+            cleanup_all_interview_artifacts(session.copy())
             session.modified = True
             
             return render_template('page3.html',
@@ -395,27 +539,28 @@ def interview():
                 final_message=final_message,
                 summary_data=zip(scores, session.get('feedbacks', [])),
                 candidate_name=session['candidate_name'],
-                report_filename=session.get('report_filename') # Pass filename to template
+                report_filename=report_filename
             )
 
-        next_question, _, _ = conduct_interview_step(role_system_prompt, resume_text, session['interview_history'], "", session['question_num'])
+        next_question, _, _ = conduct_interview_step(role_system_prompt, resume_text_for_ai, session['interview_history'], "", session['question_num'])
         session['interview_history'].append(f"Question {session['question_num']}: {next_question}")
         session['question_num'] += 1
         
-        filename = f"q_{session['question_num']-1}_{uuid.uuid4().hex}.mp3"
-        if text_to_speech(next_question, filename):
-            session['audio_filename'] = filename
-            session.setdefault('session_audio_files', []).append(filename)
+        audio_filename = f"q_{session['question_num']-1}_{uuid.uuid4().hex}.mp3"
+        if text_to_speech(next_question, audio_filename):
+            session['audio_filename'] = audio_filename
+            session.setdefault('session_audio_files', []).append(audio_filename)
         current_question = next_question
         
-    else:  # GET request for the first question
+    else:
         session['question_num'] = 1
-        first_question, _, _ = conduct_interview_step(role_system_prompt, resume_text, [], "", 1)
+        first_question, _, _ = conduct_interview_step(role_system_prompt, resume_text_for_ai, [], "", 1)
         session['interview_history'] = [f"Question 1: {first_question}"]
-        filename = f"q_1_{uuid.uuid4().hex}.mp3"
-        if text_to_speech(first_question, filename):
-            session['audio_filename'] = filename
-            session.setdefault('session_audio_files', []).append(filename)
+        
+        audio_filename = f"q_1_{uuid.uuid4().hex}.mp3"
+        if text_to_speech(first_question, audio_filename):
+            session['audio_filename'] = audio_filename
+            session.setdefault('session_audio_files', []).append(audio_filename)
         current_question = first_question
             
     session.modified = True
@@ -432,26 +577,19 @@ def interview():
                            audio_file_url=url_for('static', filename=f'audio/{session.get("audio_filename")}') if session.get('audio_filename') else None)
 
 
-# --- START: NEW DOWNLOAD ROUTE ---
 @app.route('/download_report/<path:filename>')
 def download_report(filename):
-    # Security check: only allow download if the filename matches the one in the user's session.
-    # This prevents users from guessing filenames and downloading other reports.
     if 'report_filename' not in session or session['report_filename'] != filename:
         flash("No report available for download or permission denied.", "danger")
         return redirect(url_for('page1'))
-    
-    # Use send_from_directory for secure file serving
     try:
         return send_from_directory(REPORTS_FOLDER, filename, as_attachment=True)
     except FileNotFoundError:
         flash("Report file not found. It may have been cleaned up.", "warning")
         return redirect(url_for('page1'))
 
-# --- All other routes below are unchanged ---
 @app.route('/dashboard')
 def show_dashboard():
-    # Protect this route: only accessible after an interview is finished
     if not session.get('interview_finished'):
         flash("You must complete an interview to view the dashboard.", "warning")
         return redirect(url_for('page1'))
@@ -471,8 +609,12 @@ def admin_login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        db = get_db()
-        user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        db_conn = get_db()
+        user = None
+        with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+            user = cur.fetchone()
+        
         if user and check_password_hash(user['password_hash'], password):
             session['admin_logged_in'] = True
             session['admin_username'] = user['username']
@@ -485,29 +627,197 @@ def admin_login():
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 @admin_login_required
 def admin_dashboard():
-    db = get_db()
+    db_conn = get_db()
     if request.method == 'POST':
         role_name = request.form['name'].strip()
         system_prompt = request.form['system_prompt'].strip()
         if role_name and system_prompt:
             try:
-                db.execute('INSERT INTO roles (name, system_prompt) VALUES (?, ?)', (role_name, system_prompt))
-                db.commit()
+                with db_conn.cursor() as cur:
+                    cur.execute('INSERT INTO roles (name, system_prompt) VALUES (%s, %s)', (role_name, system_prompt))
+                db_conn.commit()
                 flash(f'Role "{role_name}" added successfully.', 'success')
-            except sqlite3.IntegrityError:
+            except psycopg2.errors.UniqueViolation:
+                db_conn.rollback()
                 flash(f'Error: Role "{role_name}" already exists.', 'danger')
         else:
             flash('Both fields are required.', 'warning')
         return redirect(url_for('admin_dashboard'))
-    roles = db.execute('SELECT * FROM roles ORDER BY name').fetchall()
+    
+    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute('SELECT * FROM roles ORDER BY name')
+        roles = cur.fetchall()
+        
     return render_template('admin_dashboard.html', roles=roles)
+    
+@app.route('/admin/interviews')
+@admin_login_required
+def admin_interviews():
+    db_conn = get_db()
+    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("""
+            SELECT id, candidate_name, candidate_email, candidate_phone, role_name, final_verdict, average_score, 
+                   percentage_score, resume_filename, report_filename, created_at
+            FROM interviews
+            ORDER BY created_at DESC
+        """)
+        interviews = cur.fetchall()
+    return render_template('admin_interviews.html', interviews=interviews)
+
+@app.route('/admin/download_resume/<path:filename>')
+@admin_login_required
+def admin_download_resume(filename):
+    """
+    Allows a logged-in admin to download an original resume from the `resume_storage` folder.
+    """
+    try:
+        return send_from_directory(RESUME_STORAGE_FOLDER, filename, as_attachment=True)
+    except FileNotFoundError:
+        flash(f"Resume file '{filename}' not found on the server.", "danger")
+        return redirect(url_for('admin_interviews'))
+
+@app.route('/admin/download_interview_report/<path:filename>')
+@admin_login_required
+def admin_download_interview_report(filename):
+    """
+    Allows a logged-in admin to download a PDF report from the persistent 'reports' folder.
+    """
+    try:
+        return send_from_directory(REPORTS_FOLDER, filename, as_attachment=True)
+    except FileNotFoundError:
+        flash(f"Report file '{filename}' not found on the server.", "danger")
+        return redirect(url_for('admin_interviews'))
 
 @app.route('/admin/logout')
+@admin_login_required
 def admin_logout():
     session.pop('admin_logged_in', None)
     session.pop('admin_username', None)
     flash('You have been logged out.', 'info')
     return redirect(url_for('admin_login'))
+
+@app.route('/ats_checker', methods=['GET', 'POST'])
+def ats_checker():
+    if request.method == 'POST':
+        if 'resume_file' not in request.files:
+            flash('No file part in the request.', 'danger')
+            return redirect(request.url)
+        file = request.files['resume_file']
+        job_description = request.form.get('job_description', '').strip()
+
+        if file.filename == '':
+            flash('No selected file. Please upload your resume.', 'warning')
+            return redirect(request.url)
+            
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(ATS_UPLOAD_FOLDER, filename)
+            file.save(filepath)
+
+            calculator = AdvancedATSCalculator()
+            text = calculator.extract_text(filepath, filename)
+
+            if not text:
+                os.remove(filepath)
+                flash(f"Could not extract text from '{filename}'. The file might be corrupted or empty.", 'danger')
+                return redirect(request.url)
+            
+            results = calculator.calculate_overall_score(text, filename, job_description)
+            recommendations = calculator.generate_recommendations(results)
+            ai_suggestions = calculator.generate_ai_suggestions(results, job_description)
+            highlighted_resume = calculator.generate_highlighted_resume_html(results)
+            
+            fig_gauge, fig_radar = calculator.create_visualizations(results)
+            
+            gauge_html = fig_gauge.to_html(full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
+            radar_html = fig_radar.to_html(full_html=False, include_plotlyjs=False, config={'displayModeBar': False})
+
+            os.remove(filepath)
+
+            session['ats_resume_text'] = text
+            session['ats_job_description'] = job_description
+            if not session.get('candidate_name'):
+                name_pattern = re.search(r'^([A-Z][a-z]+ [A-Z][a-z]+)', text)
+                session['candidate_name'] = name_pattern.group(0) if name_pattern else "Candidate"
+            
+            session.modified = True
+
+            return render_template(
+                'ats_checker.html',
+                results=results,
+                recommendations=recommendations,
+                ai_suggestions=ai_suggestions,
+                highlighted_resume=highlighted_resume,
+                gauge_chart=gauge_html,
+                radar_chart=radar_html
+            )
+        else:
+            flash('Invalid file type. Please upload a PDF, DOCX, or TXT file.', 'danger')
+            return redirect(request.url)
+
+    return render_template('ats_checker.html', results=None)
+
+@app.route('/interview/start_from_ats', methods=['GET'])
+def start_interview_from_ats():
+    if 'ats_resume_text' not in session:
+        flash("Please analyze your resume first before starting an interview.", "warning")
+        return redirect(url_for('ats_checker'))
+
+    cleanup_all_interview_artifacts(session.copy())
+    
+    resume_text = session['ats_resume_text']
+    job_description = session['ats_job_description']
+
+    db_conn = get_db()
+    role_id, role_name = None, None
+    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT id, name FROM roles WHERE name ILIKE '%Software%' ORDER BY id LIMIT 1")
+        role = cur.fetchone()
+        if not role:
+            cur.execute("SELECT id, name FROM roles ORDER BY id LIMIT 1")
+            role = cur.fetchone()
+        if role:
+            role_id, role_name = role['id'], role['name']
+
+    if not role_id:
+        flash("No suitable interview roles are configured. Please ask an admin to add one.", "danger")
+        return redirect(url_for('page1'))
+
+    combined_info = f"--- RESUME TEXT ---\n{resume_text}\n\n--- JOB DESCRIPTION ---\n{job_description}"
+    
+    original_resume_filename = f"ats_generated_{uuid.uuid4().hex[:12]}.txt"
+    filepath = os.path.join(RESUME_STORAGE_FOLDER, original_resume_filename)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(combined_info)
+
+    extraction_model = genai.GenerativeModel('gemini-1.5-flash')
+    extracted_text = extract_info_with_gemini(combined_info, extraction_model)
+    
+    temp_ai_file_id = str(uuid.uuid4())
+    save_path = os.path.join(UPLOAD_FOLDER, f"{temp_ai_file_id}.txt")
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write(extracted_text)
+
+    session['resume_file'] = f"{temp_ai_file_id}.txt"
+    session['selected_role_id'] = role_id
+    session['selected_role_name'] = role_name
+    session['original_resume_filename'] = original_resume_filename
+    
+    session['interview_history'] = []
+    session['scores'] = []
+    session['feedbacks'] = []
+    session['full_questions'] = []
+    session['candidate_answers'] = []
+    session['question_num'] = 1
+    session['interview_finished'] = False
+    session['session_audio_files'] = []
+
+    session.pop('ats_resume_text', None)
+    session.pop('ats_job_description', None)
+
+    flash("Great! Let's start the interview for this role.", "success")
+    return redirect(url_for('interview'))
+
 
 if __name__ == '__main__':
     app.run(debug=True)
