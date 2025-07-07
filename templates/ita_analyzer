@@ -1,0 +1,178 @@
+
+{% extends 'layout.html' %}
+{% block title %}Interview Transcript Analyzer{% endblock %}
+
+{% block styles %}
+<style>
+  body {
+    background: #f4f7f6;
+  }
+  .card-style {
+    background: #ffffff;
+    border: none;
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+  }
+  .btn-custom {
+    background: linear-gradient(to right, #0072ff, #00c6ff);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: 0.3s ease;
+    padding: 0.75rem 1.5rem;
+  }
+  .btn-custom:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4);
+  }
+  .result-card {
+    background-color: #fff;
+    border-radius: 15px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    border-left: 5px solid #0072ff;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+  }
+  .result-card h4 {
+    color: #0072ff;
+    font-weight: 600;
+  }
+  .list-group-item.green {
+    color: #1a643b;
+    border-left: 4px solid #28a745;
+    background-color: #f0fdf4;
+  }
+  .list-group-item.red {
+    color: #8c2a34;
+    border-left: 4px solid #dc3545;
+    background-color: #fdf2f2;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card-style text-center mb-5">
+                <h1 class="mb-3" style="color: #0072ff; font-weight: 700;">Interview Transcript Analyzer</h1>
+                <p class="lead text-muted">Upload a transcript and (optionally) a job description to receive an AI-powered evaluation of the candidate's suitability.</p>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <div class="card-style">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="transcript_file" class="form-label fw-semibold fs-5"><i class="fas fa-file-alt me-2"></i>Upload Transcript (Required):</label>
+                        <input type="file" id="transcript_file" name="transcript_file" class="form-control form-control-lg" required accept=".docx,.pdf">
+                    </div>
+                    
+                    <!-- === JOB DESCRIPTION IS NOW OPTIONAL === -->
+                    <div class="mb-4">
+                        <label for="job_description" class="form-label fw-semibold fs-5"><i class="fas fa-briefcase me-2"></i>Paste Job Description (Optional):</label>
+                        <textarea id="job_description" name="job_description" rows="8" class="form-control form-control-lg" placeholder="Pasting a Job Description improves analysis accuracy..."></textarea>
+                        <small class="form-text text-muted">If left blank, the AI will infer the job role from the interviewer's questions.</small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-custom">Analyze Transcript</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- The 'results' block remains exactly the same as before -->
+    {% if results %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-lg-10">
+            <hr class="my-5">
+            <h2 class="text-center mb-4" style="font-weight: 700;">Candidate Analysis Report</h2>
+            
+            <div class="result-card text-center">
+                <h4>Overall Suitability Score</h4>
+                <div class="display-2 fw-bold my-2" style="color: #0072ff;">{{ results.overall_score }}/100</div>
+                <div class="progress" style="height: 25px; font-size: 1rem;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: {{ results.overall_score }}%; background-color: #0072ff;" aria-valuenow="{{ results.overall_score }}" aria-valuemin="0" aria-valuemax="100">
+                        {{ results.overall_score }}%
+                    </div>
+                </div>
+                <p class="fs-4 mt-3"><strong>Final Verdict:</strong> <span class="fw-semibold">{{ results.verdict }}</span></p>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="result-card h-100">
+                        <h4><i class="fas fa-check-circle me-2 text-success"></i>Key Strengths (Green Flags)</h4>
+                        <ul class="list-group list-group-flush mt-3">
+                            {% for flag in results.green_flags %}
+                            <li class="list-group-item green rounded mb-2">{{ flag }}</li>
+                            {% else %}
+                            <li class="list-group-item bg-transparent">No specific strengths identified.</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="result-card h-100">
+                        <h4><i class="fas fa-times-circle me-2 text-danger"></i>Areas for Improvement (Red Flags)</h4>
+                        <ul class="list-group list-group-flush mt-3">
+                            {% for flag in results.red_flags %}
+                            <li class="list-group-item red rounded mb-2">{{ flag }}</li>
+                            {% else %}
+                            <li class="list-group-item bg-transparent">No major areas of concern noted.</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-card mt-3">
+                <h4><i class="fas fa-cogs me-2"></i>Skills Assessment</h4>
+                 <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h5>Demonstrated Technical Skills:</h5>
+                         <ul class="list-group list-group-flush">
+                            {% for skill in results.technical_skills %}
+                                <li class="list-group-item bg-transparent"><i class="fas fa-code me-2 text-primary"></i>{{ skill }}</li>
+                            {% else %}
+                                <li class="list-group-item bg-transparent">None explicitly mentioned or demonstrated.</li>
+                            {% endfor %}
+                         </ul>
+                    </div>
+                    <div class="col-md-6">
+                         <h5>Observed Soft Skills:</h5>
+                         <ul class="list-group list-group-flush">
+                             {% for skill in results.soft_skills %}
+                                <li class="list-group-item bg-transparent"><i class="fas fa-handshake me-2 text-info"></i>{{ skill }}</li>
+                             {% else %}
+                                <li class="list-group-item bg-transparent">None explicitly observed.</li>
+                             {% endfor %}
+                         </ul>
+                    </div>
+                 </div>
+            </div>
+
+            <div class="result-card mt-3">
+                <h4><i class="fas fa-file-alt me-2"></i>Detailed Summary</h4>
+                <p class="text-muted lh-lg" style="white-space: pre-wrap;">{{ results.detailed_summary }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
