@@ -51,15 +51,23 @@
 </style>
 
 <div class="row justify-content-center align-items-center" style="min-height: 90vh;">
-  <div class="col-md-6 col-lg-4 mt-n5">
+  <div class="col-md-6 col-lg-5">
     <div class="card-style">
-      <h2 class="text-center mb-4 fw-bold text-primary">Welcome to Resume Analyzer</h2>
+      <h2 class="text-center mb-4 fw-bold text-primary">Start Your Interview</h2>
       <form method="POST" action="{{ url_for('page1') }}">
-        <div class="mb-4">
-          <label for="candidate_name" class="form-label fw-semibold">Enter your name:</label>
+        <div class="mb-3">
+          <label for="candidate_name" class="form-label fw-semibold">Full Name:</label>
           <input type="text" id="candidate_name" name="candidate_name" class="form-control form-control-lg" placeholder="e.g., Akshat Panicker" required autofocus />
         </div>
-        <button type="submit" class="btn btn-custom btn-lg w-100">Next</button>
+        <div class="mb-3">
+          <label for="candidate_email" class="form-label fw-semibold">Email Address:</label>
+          <input type="email" id="candidate_email" name="candidate_email" class="form-control form-control-lg" placeholder="e.g., you@example.com" required />
+        </div>
+        <div class="mb-4">
+          <label for="candidate_phone" class="form-label fw-semibold">Phone Number:</label>
+          <input type="tel" id="candidate_phone" name="candidate_phone" class="form-control form-control-lg" placeholder="e.g., 9876543210" required pattern="[0-9]{10}" title="Please enter a 10-digit phone number without country code." />
+        </div>
+        <button type="submit" class="btn btn-custom btn-lg w-100">Start Interview</button>
       </form>
     </div>
   </div>
