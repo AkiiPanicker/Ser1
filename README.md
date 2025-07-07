@@ -6,7 +6,9 @@ but if all is correct you can run on localhost just by running app.py and pip in
 
 Oh before that go to Google AI Studio. Generate an API token. Create an .env file on VS code if you are using and paste the token in a way I am showing below:
 
-GOOGLE_API_KEY = "You Generated Key"  (PS as this is in a .env virtual environment file no need to put in apostophe commans just type normally)
+GOOGLE_API_KEY = "Your Generated Key"  (PS as this is in a .env virtual environment file no need to put in apostophe commans just type normally)
+
+and then you need to connect to a postgresql server and replace the links with your databse link
 
 After that you can run app.py hopefully ??
 
