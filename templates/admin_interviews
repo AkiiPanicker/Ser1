@@ -1,0 +1,71 @@
+<!-- templates/admin_interviews.html -->
+{% extends 'layout.html' %}
+{% block title %}Interview Results{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+<style>
+  .table-hover tbody tr:hover { background-color: #f1f5ff; }
+  .table th { font-weight: 600; }
+  .score-badge { font-size: 0.9em; font-weight: bold; padding: 0.4em 0.7em; border-radius: 15px; }
+  .score-high { background-color: #d1e7dd; color: #0f5132; }
+  .score-mid { background-color: #fff3cd; color: #664d03; }
+  .score-low { background-color: #f8d7da; color: #842029; }
+</style>
+
+<div class="container-fluid mt-5 p-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>All Interview Results</h2>
+    <div>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-primary"><i class="bi bi-speedometer2"></i> Back to Dashboard</a>
+      <a href="{{ url_for('admin_logout') }}" class="btn btn-secondary"><i class="bi bi-box-arrow-right"></i> Logout</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-light">
+      <h4 class="mb-0">Completed Interview Sessions</h4>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Candidate</th>
+              <th scope="col">Email</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Position Applied For</th>
+              <th scope="col" class="text-center">Final Score</th>
+              <th scope="col">Final Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for interview in interviews %}
+            <tr>
+              <td>{{ interview['created_at'].strftime('%b %d, %Y, %I:%M %p') }}</td>
+              <td><strong>{{ interview['candidate_name'] }}</strong></td>
+              <td>{{ interview['candidate_email'] }}</td>
+              <td>{{ interview['candidate_phone'] }}</td>
+              <td>{{ interview['role_name'] }}</td>
+              <td class="text-center">
+                {% set score = interview['average_score']|round(1) %}
+                {% if score >= 8 %} {% set score_class = 'score-high' %}
+                {% elif score >= 5 %} {% set score_class = 'score-mid' %}
+                {% else %} {% set score_class = 'score-low' %} {% endif %}
+                <span class="badge {{ score_class }}">{{ score }}/10</span>
+              </td>
+              <td><em>{{ interview['final_verdict'] }}</em></td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="text-center p-4">No completed interviews found in the database.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
