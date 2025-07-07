@@ -40,6 +40,7 @@ MAX_QUESTIONS = 10
 ATS_UPLOAD_FOLDER = 'ats_uploads'
 os.makedirs(ATS_UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
+ALLOWED_ITA_EXTENSIONS = {'docx', 'pdf'}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
@@ -86,6 +87,79 @@ def admin_login_required(f):
             return redirect(url_for('admin_login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
+
+def allowed_ita_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_ITA_EXTENSIONS
+
+def analyze_transcript_with_gemini(transcript, job_description):
+    """
+    Analyzes an interview transcript using Gemini for candidate suitability.
+    Dynamically adjusts its prompt based on the presence of a job description.
+    """
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    # --- DYNAMIC PROMPT GENERATION ---
+    if job_description and job_description.strip():
+        # Case 1: Job Description IS PROVIDED
+        context_instructions = f"""
+        **CONTEXT:**
+        - **Job Description:** {job_description}
+        - **Interview Transcript:** {transcript}
+
+        **ANALYSIS INSTRUCTIONS:**
+        1.  Analyze the candidate's responses in the transcript **strictly against the provided Job Description**.
+        """
+    else:
+        # Case 2: Job Description IS NOT PROVIDED
+        context_instructions = f"""
+        **CONTEXT:**
+        - **Job Description:** Not Provided.
+        - **Interview Transcript:** {transcript}
+
+        **ANALYSIS INSTRUCTIONS:**
+        1.  **Infer the Job Role:** Your first and most important task is to carefully analyze the **interviewer's questions** to infer the likely job role, seniority level, and key required skills (e.g., 'Senior Azure Data Engineer', 'Cloud Architect', 'Junior Python Developer').
+        2.  **Evaluate Against Inferred Role:** Once you have inferred the role, use it as the benchmark to analyze the candidate's suitability based on their answers.
+        """
+    
+    # --- COMMON PART OF THE PROMPT ---
+    full_prompt = f"""
+    You are a world-class HR Analyst and Talent Acquisition Specialist. Your task is to provide a critical, insightful, and fair evaluation of the candidate based on the provided materials.
+
+    {context_instructions}
+
+    **EVALUATION CRITERIA (Provide for all analyses):**
+    -   **Overall Score (0-100):** A single integer score reflecting the candidate's overall fit for the role (either provided or inferred).
+    -   **Verdict:** A single, concise sentence summarizing your recommendation.
+    -   **Green Flags:** 3-5 key strengths or positive signs, citing specific examples from the transcript.
+    -   **Red Flags:** 3-5 key weaknesses or areas of concern, citing specific examples.
+    -   **Skills Assessment:** A list of demonstrated technical and soft skills.
+    -   **Detailed Summary:** A professional paragraph summarizing the candidate's performance, justifying your analysis.
+
+    **CRITICAL:** Your final output MUST BE a single, valid JSON object and nothing else. Do not include markdown formatting or any surrounding text.
+
+    **JSON OUTPUT STRUCTURE:**
+    {{
+      "overall_score": <integer>,
+      "verdict": "<string>",
+      "green_flags": ["<string>", "<string>"],
+      "red_flags": ["<string>", "<string>"],
+      "technical_skills": ["<string>", "<string>"],
+      "soft_skills": ["<string>", "<string>"],
+      "detailed_summary": "<string>"
+    }}
+    """
+    
+    try:
+        response = model.generate_content(full_prompt)
+        cleaned_response = response.text.strip()
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:-3].strip()
+        
+        analysis_result = json.loads(cleaned_response)
+        return analysis_result
+    except Exception as e:
+        print(f"Error during AI analysis or parsing: {e}\nRaw Response: {getattr(response, 'text', 'No response text available')}")
+        return {"error": "The AI analysis failed. This could be due to a malformed response or an API issue."}
 
 # --- HELPER FUNCTIONS ---
 def cleanup_all_interview_artifacts(session_data):
@@ -818,6 +892,54 @@ def start_interview_from_ats():
     flash("Great! Let's start the interview for this role.", "success")
     return redirect(url_for('interview'))
 
+@app.route('/ita_analyzer', methods=['GET', 'POST'])
+def ita_analyzer():
+    if request.method == 'POST':
+        if 'transcript_file' not in request.files:
+            flash('No transcript file part in the request.', 'danger')
+            return redirect(request.url)
+            
+        file = request.files['transcript_file']
+        # The job description is now optional, so no need to check if it's required.
+        job_description = request.form.get('job_description', '').strip()
+
+        if file.filename == '':
+            flash('No selected file. Please upload a transcript.', 'warning')
+            return redirect(request.url)
+        
+        # --- The rest of the route logic remains largely the same ---
+        if file and allowed_ita_file(file.filename):
+            try:
+                transcript_text = ""
+                if file.filename.lower().endswith('.docx'):
+                    doc = Document(file)
+                    transcript_text = "\n".join([para.text for para in doc.paragraphs])
+                elif file.filename.lower().endswith('.pdf'):
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    for page in pdf_reader.pages:
+                        transcript_text += page.extract_text() or ""
+                
+                if not transcript_text.strip():
+                    flash('The uploaded file appears to be empty or could not be read.', 'danger')
+                    return redirect(request.url)
+                
+                # Call the updated analysis function
+                results = analyze_transcript_with_gemini(transcript_text, job_description)
+
+                if "error" in results:
+                    flash(results["error"], 'danger')
+                    return render_template('ita_analyzer.html', results=None)
+
+                return render_template('ita_analyzer.html', results=results)
+
+            except Exception as e:
+                flash(f'An error occurred while processing the file: {e}', 'danger')
+                return redirect(request.url)
+        else:
+            flash('Invalid file type. Please upload a DOCX or PDF file.', 'danger')
+            return redirect(request.url)
+            
+    return render_template('ita_analyzer.html', results=None)
 
 if __name__ == '__main__':
     app.run(debug=True)
