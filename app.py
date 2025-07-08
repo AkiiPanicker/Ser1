@@ -249,8 +249,10 @@ def cleanup_all_interview_artifacts(session_data):
     print("--- Aggressive cleanup complete. ---")
 
 
-def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, interview_details):
-    #... (no changes in this function)
+# In app.py
+
+# --- NEW, UPDATED FUNCTION ---
+def create_summary_pdf(candidate_name, candidate_email, candidate_phone, avg_score, perc_score, final_message, interview_details):
     pdf_filename = f"Summary_{candidate_name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}.pdf"
     filepath = os.path.join(REPORTS_FOLDER, pdf_filename)
     pdf = FPDF()
@@ -260,7 +262,14 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
     # --- Report Header ---
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(0, 10, f"Interview Summary for {candidate_name}", 0, 1, 'C')
-    pdf.ln(10)
+    pdf.ln(5) # Add a little space
+    
+    # --- START: ADDED CONTACT INFO BLOCK ---
+    pdf.set_font("Arial", '', 11) # Use a smaller, non-bold font
+    pdf.cell(0, 6, f"Email: {candidate_email}", 0, 1, 'C')
+    pdf.cell(0, 6, f"Phone: {candidate_phone}", 0, 1, 'C')
+    pdf.ln(8) # Add more space after contact info
+    # --- END: ADDED CONTACT INFO BLOCK ---
     
     # --- Overall Results Section ---
     pdf.set_font("Arial", 'B', 14)
@@ -273,7 +282,7 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
     pdf.ln(5)
 
-    # --- Detailed Breakdown Section ---
+    # --- Detailed Breakdown Section (The rest of the function is unchanged) ---
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, "Detailed Interview Breakdown", 0, 1, 'L')
     pdf.ln(2)
@@ -309,7 +318,7 @@ def create_summary_pdf(candidate_name, avg_score, perc_score, final_message, int
     except Exception as e:
         print(f"Error occurred while generating PDF report: {e}")
         return None
-
+    
 def send_email_with_pdf(recipient_emails, subject, body, pdf_filepath):
     #... (no changes in this function)
     message = MIMEMultipart()
@@ -627,7 +636,15 @@ def interview():
             session['line_chart_scores'] = scores
 
             report_filename = None
-            generated_pdf_filepath = create_summary_pdf(session['candidate_name'], avg_score, perc_score, final_message, structured_interview_details)
+            generated_pdf_filepath = create_summary_pdf(
+    session['candidate_name'], 
+    session.get('candidate_email', 'N/A'),  # Use .get for safety
+    session.get('candidate_phone', 'N/A'),  # Use .get for safety
+    avg_score, 
+    perc_score, 
+    final_message, 
+    structured_interview_details
+)
             
             if generated_pdf_filepath:
                 report_filename = os.path.basename(generated_pdf_filepath)
