@@ -4,7 +4,7 @@ import psycopg2
 import psycopg2.extras
 
 # --- FIX: Changed password to 'seri' for consistency with other files ---
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:seri@localhost/interview_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:uatsa%40123@103.15.67.132:5432/interview_db")
 
 def get_connection():
     """
