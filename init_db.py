@@ -4,7 +4,7 @@ import psycopg2
 from werkzeug.security import generate_password_hash
 
 # It's good practice to get the connection string from an environment variable
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:seri@localhost/interview_db") 
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:uatsa%40123@103.15.67.132:5432/interview_db") 
 
 # Establish connection to the database
 try:
