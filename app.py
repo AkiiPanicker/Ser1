@@ -134,12 +134,18 @@ def call_groq_api(prompt, system_prompt=None):
 # --- END MODIFICATION ---
 
 # --- MODIFICATION 4: REFACTOR THE ANALYSIS FUNCTION TO USE GROQ ---
-def analyze_transcript_with_groq(transcript, job_description): # <- Renamed for clarity
+# In app.py
+
+# This is the corrected HELPER function.
+# It should NOT have an @app.route decorator.
+# In app.py
+
+def analyze_transcript_with_groq(transcript, job_description):
     """
     Analyzes an interview transcript using Groq for candidate suitability.
-    Dynamically adjusts its prompt based on the presence of a job description.
+    Dynamically adjusts its prompt and robustly parses the JSON response.
     """
-    # --- DYNAMIC PROMPT GENERATION (Unchanged) ---
+    # Dynamically create the context for the prompt based on job description availability
     if job_description and job_description.strip():
         context_instructions = f"""
         **CONTEXT:**
@@ -160,7 +166,7 @@ def analyze_transcript_with_groq(transcript, job_description): # <- Renamed for 
         2.  **Evaluate Against Inferred Role:** Once you have inferred the role, use it as the benchmark to analyze the candidate's suitability based on their answers.
         """
     
-    # --- COMMON PART OF THE PROMPT (Unchanged) ---
+    # Define the full prompt with clear instructions for the AI
     full_prompt = f"""
     You are a world-class HR Analyst and Talent Acquisition Specialist. Your task is to provide a critical, insightful, and fair evaluation of the candidate based on the provided materials.
 
@@ -188,65 +194,92 @@ def analyze_transcript_with_groq(transcript, job_description): # <- Renamed for 
     }}
     """
     
+    # Initialize response_text to ensure it's available in the except block for logging
+    response_text = ""
     try:
-        # Call our new Groq helper function
+        # Call the centralized Groq API helper function
         response_text = call_groq_api(prompt=full_prompt)
         
-        # The rest of the parsing logic is robust and should work with Groq's output
-        cleaned_response = response_text.strip()
-        if cleaned_response.startswith("```json"):
-            cleaned_response = cleaned_response[7:-3].strip()
-        
-        analysis_result = json.loads(cleaned_response)
-        return analysis_result
-    except Exception as e:
-        print(f"Error during AI analysis or parsing: {e}\nRaw Response: {response_text}")
-        return {"error": "The AI analysis failed. This could be due to a malformed response from Groq or an API issue."}
-# --- END MODIFICATION ---
+        # Check if the helper function itself returned a specific API error message
+        if "An error occurred during API call" in response_text:
+             raise ValueError(f"Groq API call failed: {response_text}")
 
-# --- HELPER FUNCTIONS (Unchanged section) ---
-# NOTE: The following functions do not make AI calls and remain exactly the same.
-def cleanup_all_interview_artifacts(session_data):
-    #... (no changes in this function)
-    print("--- Running aggressive cleanup for ALL interview artifacts... ---")
+        # --- Robust JSON Extraction ---
+        # Find the starting '{' and the last '}' to handle cases where the AI is "chatty"
+        start_index = response_text.find('{')
+        end_index = response_text.rfind('}')
+
+        if start_index != -1 and end_index != -1 and end_index > start_index:
+            # Extract the substring that contains only the JSON object
+            json_substring = response_text[start_index : end_index + 1]
+            
+            # Parse the extracted JSON string
+            analysis_result = json.loads(json_substring)
+            return analysis_result
+        else:
+            # If a valid JSON object can't be found, raise an error to be caught below
+            raise json.JSONDecodeError("Could not find a valid JSON object in the AI's response.", response_text, 0)
     
-    files_to_delete_info = []
+    except Exception as e:
+        # This single except block will now catch all possible errors gracefully:
+        # - API call failures
+        # - Failure to find a JSON object in the response
+        # - Invalid JSON formatting within the object
+        print(f"--- ITA ANALYSIS ERROR ---")
+        print(f"Error details: {e}")
+        print(f"Raw response from AI that caused the error:\n---\n{response_text}\n---")
+        
+        # Return a consistent error dictionary for the Flask route to handle
+        return {"error": "The AI analysis failed. This could be due to a malformed response from the AI or an API connectivity issue. Please check the server logs for more details."}
 
-    # 1. Get AI summary file from /uploads
+def cleanup_all_interview_artifacts(session_data):
+    """
+    Deletes ALL files associated with a completed interview session using robust,
+    absolute paths. This includes the temporary AI summary, all audio files,
+    the original resume, and the final generated PDF report.
+    """
+    print("--- Running ROBUST cleanup for ALL interview artifacts... ---")
+    
+    # We will build a simple list of (folder_path, filename) tuples
+    artifacts_to_delete = []
+
+    # 1. The AI-generated summary file in the 'uploads' folder
     if session_data.get('resume_file'):
-        path = os.path.join(UPLOAD_FOLDER, session_data.get('resume_file'))
-        files_to_delete_info.append({'path': path, 'is_static': False})
-        
-    # 2. Get all audio files from /static/audio
+        artifacts_to_delete.append((UPLOAD_FOLDER, session_data.get('resume_file')))
+
+    # 2. All generated audio files from the 'static/audio' folder
+    # Note: AUDIO_FOLDER is 'static/audio', so we don't need to add 'static/' again
     for audio_file in session_data.get('session_audio_files', []):
-        path = os.path.join(AUDIO_FOLDER, audio_file)
-        files_to_delete_info.append({'path': path, 'is_static': True}) # Mark as static
-        
-    # 3. Get the original resume from /resume_storage
+        artifacts_to_delete.append((AUDIO_FOLDER, audio_file))
+
+    # 3. The candidate's original resume from the 'resume_storage' folder
     if session_data.get('original_resume_filename'):
-        path = os.path.join(RESUME_STORAGE_FOLDER, session_data.get('original_resume_filename'))
-        files_to_delete_info.append({'path': path, 'is_static': False})
+        artifacts_to_delete.append((RESUME_STORAGE_FOLDER, session_data.get('original_resume_filename')))
 
-    # 4. Get the generated PDF report from /reports
+    # 4. The final PDF report from the 'reports' folder
     if session_data.get('report_filename'):
-        path = os.path.join(REPORTS_FOLDER, session_data.get('report_filename'))
-        files_to_delete_info.append({'path': path, 'is_static': False})
+        artifacts_to_delete.append((REPORTS_FOLDER, session_data.get('report_filename')))
 
-    # Loop through the list and delete each file with the correct path logic
-    for file_info in files_to_delete_info:
+    # --- Loop through the list and delete each file using its absolute path ---
+    for folder, filename in artifacts_to_delete:
+        if not filename:
+            continue # Skip if filename is empty for some reason
+
         try:
-            # CORRECTED PATH LOGIC: Construct the absolute path based on whether it's static or not
-            full_path = os.path.join(app.root_path, file_info['path']) if file_info['is_static'] else file_info['path']
+            # THIS IS THE KEY FIX: Construct a full, absolute path from the app's root.
+            # This works reliably regardless of where the script is run from.
+            # Example: /path/to/your/project/reports/Summary_....pdf
+            full_path = os.path.join(app.root_path, folder, filename)
             
             if os.path.exists(full_path):
                 os.remove(full_path)
-                print(f"SUCCESS: Aggressively deleted artifact: {full_path}")
+                print(f"SUCCESS: Cleaned up artifact: {full_path}")
             else:
-                print(f"SKIPPING: Artifact not found at path: {full_path}")
+                print(f"SKIPPING: Artifact not found at: {full_path}")
         except Exception as e:
-            print(f"ERROR: Could not delete artifact {file_info['path']}. Reason: {e}")
+            print(f"ERROR: Could not delete artifact {folder}/{filename}. Reason: {e}")
             
-    print("--- Aggressive cleanup complete. ---")
+    print("--- Robust cleanup complete. ---")
 
 
 # In app.py
@@ -1007,7 +1040,6 @@ def start_interview_from_ats():
 
 @app.route('/ita_analyzer', methods=['GET', 'POST'])
 def ita_analyzer():
-    # This route calls analyze_transcript_with_gemini, which we have now refactored.
     if request.method == 'POST':
         if 'transcript_file' not in request.files:
             flash('No transcript file part in the request.', 'danger')
@@ -1035,22 +1067,26 @@ def ita_analyzer():
                     flash('The uploaded file appears to be empty or could not be read.', 'danger')
                     return redirect(request.url)
                 
-                # MODIFIED CALL
+                # Correctly calling the helper function with required arguments
                 results = analyze_transcript_with_groq(transcript_text, job_description)
 
+                # Correctly checking for an error dictionary from the helper
                 if "error" in results:
                     flash(results["error"], 'danger')
                     return render_template('ita_analyzer.html', results=None)
 
+                # If no error, render the results
                 return render_template('ita_analyzer.html', results=results)
 
             except Exception as e:
+                # Catch any other unexpected errors during file processing
                 flash(f'An error occurred while processing the file: {e}', 'danger')
                 return redirect(request.url)
         else:
             flash('Invalid file type. Please upload a DOCX or PDF file.', 'danger')
             return redirect(request.url)
             
+    # For a GET request, just show the upload form
     return render_template('ita_analyzer.html', results=None)
 
 if __name__ == '__main__':
