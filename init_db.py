@@ -46,6 +46,9 @@ CREATE TABLE interviews (
     candidate_email TEXT NOT NULL,         -- NEW: Candidate's email
     candidate_phone TEXT NOT NULL,         -- NEW: Candidate's phone number
     role_name TEXT NOT NULL,
+     -- --- NEW COLUMN ---
+    interview_type TEXT NOT NULL DEFAULT 'Resume-based', -- Can be 'Resume-based' or 'Behavioral'
+    -- --- END NEW COLUMN ---
     final_verdict TEXT NOT NULL,
     average_score REAL NOT NULL,
     percentage_score REAL NOT NULL,
