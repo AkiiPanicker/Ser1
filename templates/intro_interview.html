@@ -1,0 +1,399 @@
+{% extends 'layout.html' %}
+{% block title %}Interview | Resume Analyzer{% endblock %}
+
+{% block content %}
+<style>
+  /* All CSS styles remain exactly the same */
+  body {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: #fff;
+    font-size: 1.1rem;
+    overflow-y: hidden; /* Prevent main page scroll */
+  }
+
+  .interview-container {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+    padding: 2rem;
+    height: calc(100vh - 4rem);
+  }
+
+  .video-panel {
+    flex: 2;
+  }
+  
+  .chat-panel {
+    flex: 3;
+  }
+
+  .video-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    justify-content: center;
+    align-items: center;
+    transition: box-shadow 0.3s ease-in-out;
+    border-radius: 20px;
+  }
+  
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #6a11cb #e3e6f3;
+  }
+  
+  #interviewerBox,
+  .user-video-container {
+    flex: 1; 
+    width: 100%;
+    min-height: 0; 
+  }
+  
+  #interviewerBox {
+    background-color: #343a40;
+    border-radius: 15px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: box-shadow 0.3s ease-in-out;
+  }
+  
+  .ai-pfp {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background-color: #495057;
+    border: 3px solid #adb5bd;
+    background-image: url('https://images.unsplash.com/photo-1589254065909-b7086229d08c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Nnx8cm9ib3R8ZW58MHx8MHx8fDA%3D&auto=format&fit=crop&w=500&q=60');
+    background-size: cover;
+    background-position: center;
+  }
+
+  @keyframes pulse {
+    0% { box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset; }
+    50% { box-shadow: 0 0 24px rgba(255, 255, 255, 0.9), 0 0 14px rgba(255, 255, 255, 0.7) inset; }
+    100% { box-shadow: 0 0 8px rgba(200, 200, 255, 0.5), 0 0 10px rgba(200, 200, 255, 0.5) inset; }
+  }
+
+  #interviewerBox.speaking { box-shadow: 0 0 15px #2575fc, 0 0 25px #2575fc, 0 0 35px #2575fc; }
+  #interviewerBox.listening { box-shadow: 0 0 15px #6a11cb, 0 0 25px #6a11cb, 0 0 35px #6a11cb; }
+  #interviewerBox.thinking { animation: pulse 2s infinite ease-in-out; }
+
+  .user-video-container {
+    background-color: #1c1f26;
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #userVideo { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .video-placeholder { color: #6c757d; text-align: center; padding: 2rem; }
+
+  .chat-panel::-webkit-scrollbar { width: 8px; }
+  .chat-panel::-webkit-scrollbar-track { background: #e3e6f3; border-radius: 10px; }
+  .chat-panel::-webkit-scrollbar-thumb { background-color: #6a11cb; border-radius: 10px; border: 2px solid #e3e6f3; }
+  .chat-panel::-webkit-scrollbar-thumb:hover { background-color: #2575fc; }
+
+  .card-style { background: linear-gradient(to bottom right, #ffffff, #e3e6f3); border-radius: 20px; padding: 2.5rem; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); color: #1c1f26; animation: fadeInUp 0.8s ease-out; position: relative; width: 100%; }
+
+  @media (max-width: 992px) {
+    body { overflow-y: auto; }
+    .interview-container { flex-direction: column; height: auto; }
+    .video-panel { flex-direction: row; align-items: stretch; height: 200px; }
+    .chat-panel { max-height: none; overflow-y: visible; }
+    #interviewerBox { flex: 0 0 120px; height: auto; } 
+  }
+
+  .end-interview-btn { position: absolute; top: 1.5rem; right: 1.5rem; z-index: 10; }
+  h2.text-primary { color: #6a11cb !important; font-size: 1.8rem; font-weight: 700; }
+  label { font-weight: 600; color: #444; }
+  .form-control-lg { border-radius: 12px; border: 2px solid #6a11cb; font-size: 1.1rem; box-shadow: none; }
+  .btn-custom { background: white; color: white; border: none; border-radius: 12px; font-weight: bold; font-size: 1.1rem; transition: 0.3s ease; }
+  .feedback-box { background-color: #eef1f9; border-left: 5px solid #6a11cb; padding: 1rem; margin-top: 1.2rem; border-radius: 10px; color: #333; font-style: italic; }
+  .score-box { margin-top: 1.2rem; font-weight: bold; font-size: 1.1rem; color: #2575fc; }
+  .final-box { text-align: center; padding: 2rem; color: #1c1f26; }
+  .score-highlight { font-size: 2.4rem; font-weight: bold; color: #ff9f00; }
+  ul.list-group { border-radius: 10px; margin-top: 1.2rem; }
+  .list-group-item { background-color: #f8f9fc; border: none; margin-bottom: 0.5rem; border-left: 4px solid #2575fc; }
+  @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(40px); } 100% { opacity: 1; transform: translateY(0); } }
+  .audio-player-container { margin: 15px 0 20px 0; text-align: center; }
+  .audio-player-container audio { width: 100%; max-width: 400px; margin: 0 auto; }
+  #speechStatus { font-weight: bold; margin-top: 10px; color: #6a11cb; }
+  #speechStatus.recording { color: green; }
+  #speechStatus.error { color: red; }
+
+  .progress-container {
+    margin-bottom: 1.5rem;
+    text-align: center;
+    color: #495057;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .progress-bar-track {
+    background-color: #e9ecef;
+    border-radius: 50px;
+    height: 12px;
+    width: 100%;
+    margin-top: 0.5rem;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    height: 100%;
+    border-radius: 50px;
+    transition: width 0.5s ease-in-out;
+  }
+</style>
+
+<div class="interview-container">
+  <div class="video-panel">
+      <div id="interviewerBox">
+          <div class="ai-pfp"></div>
+      </div>
+      <div class="user-video-container">
+          <video id="userVideo" autoplay playsinline muted></video>
+          <div id="videoPlaceholder" class="video-placeholder" style="display: none;">
+              <p>Could not access webcam.</p>
+              <p>Please grant permission in your browser.</p>
+          </div>
+      </div>
+  </div>
+
+  <div class="chat-panel">
+    <div class="card-style">
+      {% if interview_finished %}
+        <div class="final-box">
+          <h2 class="mb-4">Interview Summary for <strong>{{ candidate_name }}</strong></h2>
+          <p class="score-box">Average Score: <span class="score-highlight">{{ average_score|round(1) }}/10</span></p>
+          <p class="score-box">Percentage Score: <span class="score-highlight">{{ percentage_score|round(1) }}%</span></p>
+          <p class="mt-4 fs-5">{{ final_message }}</p>
+
+          <hr class="my-4"/>
+          <!-- START: MODIFIED SECTION -->
+          <div class="d-flex justify-content-center gap-2 flex-wrap">
+              <a href="{{ url_for('show_dashboard') }}" class="btn btn-primary btn-lg">View Full Analytics Dashboard</a>
+              
+              <a href="{{ url_for('page1') }}" class="btn btn-secondary btn-lg">Start New Interview</a>
+          </div>
+          <!-- END: MODIFIED SECTION -->
+
+          <h4 class="mt-5">Quick Feedback Summary:</h4>
+          <ul class="list-group text-start">
+            {% for score, feedback in summary_data %}
+              <li class="list-group-item">
+                <strong>Score:</strong> {{ score|round(1) }} <br />
+                {% if feedback %}<em>{{ feedback }}</em>{% else %}<em>No detailed feedback provided.</em>{% endif %}
+              </li>
+            {% else %}
+               <li class="list-group-item">No questions were answered during the interview.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <form method="POST" action="{{ url_for('interview') }}">
+            <button type="submit" name="end_interview" value="true" class="btn btn-danger end-interview-btn">End Interview</button>
+        </form>
+
+        <div class="progress-container">
+            <span>Question {{ question_number }} of {{ max_questions }}</span>
+            <div class="progress-bar-track">
+                <div id="progressBarFill" class="progress-bar-fill" data-progress="{{ (question_number / max_questions * 100)|round }}"></div>
+            </div>
+        </div>
+
+        <h2 class="text-primary mb-3">Hi {{ candidate_name }}, here's your question:</h2>
+        
+        <p id="questionText" data-question="{{ question }}" class="mb-4 fw-semibold" style="min-height: 50px;"></p>
+
+        {% if audio_file_url %}
+          <div class="audio-player-container">
+            <audio id="questionAudio" style="display: none;">
+              <source src="{{ audio_file_url }}" type="audio/mpeg">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        {% endif %}
+        
+        <form id="answerForm" method="POST">
+          <div class="mb-3">
+            <label for="answer">Your Answer:</label>
+            <textarea id="answer" name="answer" rows="5" class="form-control form-control-lg" placeholder="Please wait for the text and audio to finish..." required disabled></textarea>
+          </div>
+          <div class="speech-controls">
+            <p id="speechStatus" class="mt-2">Loading...</p>
+          </div>
+          {% if last_score is not none %}
+            <div class="score-box">Last Score: {{ last_score|round(1) }}/10</div>
+          {% endif %}
+          {% if last_feedback %}
+            <div class="feedback-box">{{ last_feedback }}</div>
+          {% endif %}
+          <button type="submit" class="btn btn-custom btn-lg mt-3 w-100" id="submitButton" disabled></button>
+        </form>
+        {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+    // All JavaScript is unchanged.
+    document.addEventListener('DOMContentLoaded', function() {
+        const questionElement = document.getElementById('questionText');
+        const audioPlayer = document.getElementById('questionAudio');
+        const answerTextarea = document.getElementById('answer');
+        const submitButton = document.getElementById('submitButton');
+        const interviewerBox = document.getElementById('interviewerBox');
+
+        if (questionElement && questionElement.dataset.question) {
+            const fullQuestionText = questionElement.getAttribute('data-question');
+            let charIndex = 0;
+            questionElement.textContent = ''; 
+
+            function typeCharacter() {
+                if (charIndex < fullQuestionText.length) {
+                    questionElement.textContent += fullQuestionText.charAt(charIndex);
+                    charIndex++;
+                    setTimeout(typeCharacter, 30);
+                } else {
+                    if (audioPlayer) {
+                         audioPlayer.play().then(() => {
+                            interviewerBox.classList.add('speaking');
+                            speechStatus.textContent = 'Playing question...';
+                         }).catch(error => {
+                            console.warn("Autoplay prevented:", error);
+                            enableAnswerControls(); 
+                         });
+                    } else {
+                         enableAnswerControls();
+                    }
+                }
+            }
+            if (fullQuestionText) typeCharacter();
+        }
+
+        const progressBar = document.getElementById('progressBarFill');
+        if (progressBar) {
+            progressBar.style.width = progressBar.getAttribute('data-progress') + '%';
+        }
+
+        const videoElement = document.getElementById('userVideo');
+        const videoPlaceholder = document.getElementById('videoPlaceholder');
+        const answerForm = document.getElementById('answerForm'); 
+        let autoSubmitTimer;
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(stream => {
+                    videoElement.srcObject = stream;
+                    videoElement.style.display = 'block';
+                    videoPlaceholder.style.display = 'none';
+                }).catch(error => {
+                    console.error("Error accessing webcam: ", error);
+                    videoElement.style.display = 'none';
+                    videoPlaceholder.style.display = 'block';
+                });
+        } else {
+            console.error("getUserMedia not supported on your browser!");
+            videoElement.style.display = 'none';
+            videoPlaceholder.style.display = 'block';
+        }
+
+        const speechStatus = document.getElementById('speechStatus');
+        let recognition;
+        let finalTranscript = '';
+
+        function enableAnswerControls() {
+            if(recognition) {
+                recognition.start();
+            } else {
+                answerTextarea.disabled = false;
+                submitButton.disabled = false;
+                speechStatus.textContent = 'Speech recognition not supported. Please type your answer.';
+            }
+        }
+
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            let silenceTimeout, noSpeechTimeout;
+
+            recognition.onstart = () => {
+                interviewerBox.classList.add('listening');
+                speechStatus.textContent = 'Listening... Speak now. Mic will stop after 10s of silence.';
+                speechStatus.className = 'recording';
+                answerTextarea.disabled = false;
+                answerTextarea.placeholder = 'Start speaking, or type your answer here...';
+                answerTextarea.focus();
+                noSpeechTimeout = setTimeout(() => { if(recognition) recognition.stop(); }, 15000); 
+            };
+            
+            recognition.onresult = (event) => {
+                clearTimeout(noSpeechTimeout);
+                clearTimeout(silenceTimeout);
+                silenceTimeout = setTimeout(() => { if(recognition) recognition.stop(); }, 10000);
+                let interim = ''; finalTranscript = '';
+                for (let i = 0; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript + ' ';
+                    else interim += event.results[i][0].transcript;
+                }
+                answerTextarea.value = finalTranscript + interim;
+            };
+
+            recognition.onerror = (event) => {
+                interviewerBox.classList.remove('listening');
+                speechStatus.textContent = `Error: ${event.error}. Please type your answer.`;
+                speechStatus.className = 'error';
+                answerTextarea.disabled = false;
+                submitButton.disabled = false;
+            };
+
+            recognition.onend = () => {
+                interviewerBox.classList.remove('listening');
+                clearTimeout(silenceTimeout);
+                clearTimeout(noSpeechTimeout);
+                speechStatus.classList.remove('recording');
+                submitButton.disabled = false;
+                answerTextarea.value = finalTranscript.trim();
+                if (!speechStatus.classList.contains('error') && finalTranscript.trim()) {
+                    let count = 3;
+                    speechStatus.textContent = `Answer captured. Submitting in ${count}s.`;
+                    autoSubmitTimer = setInterval(() => {
+                        count--;
+                        speechStatus.textContent = `Answer captured. Submitting in ${count}s.`;
+                        if (count <= 0) {
+                            clearInterval(autoSubmitTimer);
+                            submitButton.click(); 
+                        }
+                    }, 1000);
+                } else {
+                    speechStatus.textContent = 'Recording finished. You can type or submit manually.';
+                }
+            };
+        }
+
+        if (answerForm) {
+            answerForm.addEventListener('submit', () => {
+                clearInterval(autoSubmitTimer);
+                interviewerBox.className = 'thinking';
+            });
+        }
+        
+        if (audioPlayer) {
+            audioPlayer.onended = () => {
+                interviewerBox.classList.remove('speaking');
+                enableAnswerControls();
+            };
+        }
+    });
+</script>
+{% endblock %}
