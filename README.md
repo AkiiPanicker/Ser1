@@ -4,15 +4,17 @@ Updated and advanced interview bot
 I have terrible file organization skills 
 but if all is correct you can run on localhost just by running app.py and pip installing all requirements.
 
-Oh before that go to Google AI Studio. Generate an API token. Create an .env file on VS code if you are using and paste the token in a way I am showing below:
+Oh before that go to Groq studio to get API key. Generate an API token. Create an .env file on VS code if you are using and paste the token in a way I am showing below:
 
-GOOGLE_API_KEY = "Your Generated Key"  (PS as this is in a .env virtual environment file no need to put in apostophe commans just type normally)
+GROQ_API_KEY = "Your Generated Key"  (PS as this is in a .env virtual environment file no need to put in apostophe commans just type normally)
 
 and then you need to connect to a postgresql server and replace the links with your databse link
 
+install all python dependencies
+
 After that you can run app.py hopefully ??
 
-I dont know its just probably my boredom project hence not very refined or fancy (also I suckkk at UI)
+I know the UI is terible but i suckk at Ui so...
 
 Also I highly recommend watching some movies like : 
 1. Brutalist is nice
