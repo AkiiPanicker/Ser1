@@ -438,7 +438,7 @@ def conduct_interview_step(role_system_prompt, resume_text, interview_history, c
     score, feedback = None, None
     if candidate_answer.strip() != "":
         last_question = interview_history[-1] if interview_history else "No previous question found."
-        eval_prompt = f"You are an interviewer evaluating a candidate's answer. Provide a score out of 10 and short constructive feedback. Format the output as: a single decimal number for the score (e.g., 8.5) on the first line, and feedback on subsequent lines.\nInterview Question: {last_question}\nCandidate Answer: {candidate_answer}"
+        eval_prompt = f"You are an interviewer evaluating a candidate's answer.Make sure the evaluation is done strict in such a way that the answer given must cover the knowledge and understanding behind the question.In case if the cadidate gives entirely irrelevant answer or no answer evaluate the score as 0. Provide a score out of 10 and short constructive feedback. Format the output as: a single decimal number for the score (e.g., 8.5) on the first line, and feedback on subsequent lines.\nInterview Question: {last_question}\nCandidate Answer: {candidate_answer}"
         try:
             # Use helper with a system prompt
             eval_response_text = call_groq_api(prompt=eval_prompt, system_prompt=role_system_prompt)
@@ -587,18 +587,82 @@ def upload_resume():
 
 # The remaining routes (interview, ita_analyzer, etc.) will also call the new Groq functions,
 # but the rest of their logic is the same. I've included the fully updated versions below.
+@app.route('/behavioral-interview/start', methods=['GET'])
+def behavioral_interview_start():
+    """
+    Sets up a new, purely conversational behavioral interview.
+    It does not require a resume or a specific role selection from the user.
+    """
+    if 'candidate_name' not in session:
+        flash("Please provide your details before starting a behavioral interview.", "warning")
+        return redirect(url_for('page1'))
 
+    # Clean up any files from a previous session to avoid clutter
+    cleanup_all_interview_artifacts(session.copy())
+
+    # Define a list of all keys related to a single interview instance.
+    # This prevents clearing the whole session (e.g., admin login).
+    INTERVIEW_SESSION_KEYS_TO_CLEAR = [
+        'is_behavioral_interview', 'system_prompt_override', 'max_questions', 
+        'resume_file', 'selected_role_id', 'selected_role_name', 'original_resume_filename',
+        'interview_history', 'scores', 'feedbacks', 'full_questions', 'candidate_answers',
+        'question_num', 'interview_finished', 'session_audio_files', 'audio_filename',
+        'final_avg_score', 'final_perc_score', 'final_message', 
+        'structured_interview_details', 'skills_data', 'line_chart_scores', 'report_filename',
+        'ats_resume_text', 'ats_job_description'
+    ]
+    for key in INTERVIEW_SESSION_KEYS_TO_CLEAR:
+        session.pop(key, None)
+
+    # Define the specific instructions for the AI for this interview type
+    BEHAVIORAL_SYSTEM_PROMPT = """You are a friendly and professional Human Resources (HR) interviewer conducting a behavioral screening interview. Your goal is to assess the candidate's personality, communication skills, and general professional demeanor.
+
+Your Instructions:
+1. **Start the interview** with a classic opening question like 'Tell me about yourself' or 'Can you walk me through your background?'.
+2. **Ask exactly 7 questions in total.** After the 7th question, do not ask another.
+3. **Build upon the candidate's previous answers** to make the conversation feel natural and engaging.
+4. Your questions should be open-ended and behavioral in nature. Focus on topics like teamwork, dealing with conflict, problem-solving under pressure, motivation, and career aspirations.
+5. **CRITICAL:** Avoid deep technical questions about specific programming languages, frameworks, or technologies. This is not a technical assessment.
+6. Keep your questions concise and clear. Maintain a positive and encouraging tone throughout.
+
+Do not refer to a resume, as you have not been provided with one. This is a purely conversational interview."""
+    
+    # Initialize the session with settings for a behavioral interview
+    session['is_behavioral_interview'] = True
+    session['system_prompt_override'] = BEHAVIORAL_SYSTEM_PROMPT
+    session['max_questions'] = 7
+    session['selected_role_name'] = "Behavioral Interview"
+    session['question_num'] = 1
+    session['interview_finished'] = False
+    session['interview_history'] = []
+    session['scores'] = []
+    session['feedbacks'] = []
+    session['full_questions'] = []
+    session['candidate_answers'] = []
+    session['session_audio_files'] = []
+
+    session.modified = True
+    flash("Starting your behavioral interview. Good luck!", "info")
+    return redirect(url_for('interview'))
+# --- END: NEW ROUTE ---
+
+# In app.py - This is the fully corrected and flexible interview route
+
+# --- START: MODIFIED INTERVIEW ROUTE ---
 @app.route('/interview', methods=['GET', 'POST'])
 def interview():
-    # This entire function is logically the same, but it implicitly uses the
-    # Groq-powered 'conduct_interview_step' and 'generate_dashboard_analytics'.
-    # No direct changes are needed here because we refactored those functions.
-    if 'candidate_name' not in session or 'selected_role_id' not in session:
+    """
+    Handles the main interview flow for both resume-based and behavioral interviews.
+    """
+    if 'candidate_name' not in session:
         flash("Interview session expired or invalid. Please start again.", "warning")
         return redirect(url_for('page1'))
 
+    # Dynamically set max questions from session, or use the default
+    max_interview_questions = session.get('max_questions', MAX_QUESTIONS)
+
     if session.get('interview_finished') and request.method == 'GET':
-        return render_template('page3.html',
+        return render_template('intro_interview.html',
             interview_finished=True,
             average_score=session.get('final_avg_score', 0),
             percentage_score=session.get('final_perc_score', 0),
@@ -607,28 +671,36 @@ def interview():
             candidate_name=session.get('candidate_name', 'Candidate'),
             report_filename=session.get('report_filename')
         )
-
-    db_conn = get_db()
-    role = None
-    with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute('SELECT system_prompt FROM roles WHERE id = %s', (session['selected_role_id'],))
-        role = cur.fetchone()
     
-    if not role:
-        flash("The selected interview role no longer exists. Please start over.", "danger")
-        session.clear()
-        return redirect(url_for('page1'))
-    role_system_prompt = role['system_prompt']
+    # Check for a session-based system prompt (for behavioral interviews).
+    role_system_prompt = session.get('system_prompt_override')
+
+    # If no override exists, fetch from the database (for standard interviews).
+    if not role_system_prompt:
+        if 'selected_role_id' not in session:
+            flash("Interview session is missing a role. Please start again.", "warning")
+            return redirect(url_for('page1'))
+        
+        db_conn = get_db()
+        with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('SELECT system_prompt FROM roles WHERE id = %s', (session['selected_role_id'],))
+            role = cur.fetchone()
+        
+        if not role:
+            flash("The selected interview role no longer exists. Please start over.", "danger")
+            session.clear()
+            return redirect(url_for('page1'))
+        role_system_prompt = role['system_prompt']
 
     resume_text_for_ai = ""
-    if 'resume_file' in session:
+    if session.get('resume_file'):
         resume_path = os.path.join(UPLOAD_FOLDER, session['resume_file'])
         if os.path.exists(resume_path):
             with open(resume_path, 'r', encoding='utf-8') as f:
                 resume_text_for_ai = f.read()
 
     if request.method == 'POST':
-        is_finished = 'end_interview' in request.form or session.get('question_num', 1) > MAX_QUESTIONS
+        is_finished = 'end_interview' in request.form or session.get('question_num', 1) > max_interview_questions
         candidate_answer = request.form.get('answer', '').strip()
         question_num = session.get('question_num', 1)
         interview_history = session.get('interview_history', [])
@@ -643,7 +715,6 @@ def interview():
                 session['scores'].append(score)
                 session['feedbacks'].append(feedback)
             session['interview_history'].append(f"Answer {question_num-1}: {candidate_answer}")
-
 
         if is_finished:
             session['interview_finished'] = True
@@ -670,14 +741,14 @@ def interview():
 
             report_filename = None
             generated_pdf_filepath = create_summary_pdf(
-    session['candidate_name'], 
-    session.get('candidate_email', 'N/A'),  # Use .get for safety
-    session.get('candidate_phone', 'N/A'),  # Use .get for safety
-    avg_score, 
-    perc_score, 
-    final_message, 
-    structured_interview_details
-)
+                session['candidate_name'], 
+                session.get('candidate_email', 'N/A'),
+                session.get('candidate_phone', 'N/A'),
+                avg_score, 
+                perc_score, 
+                final_message, 
+                structured_interview_details
+            )
             
             if generated_pdf_filepath:
                 report_filename = os.path.basename(generated_pdf_filepath)
@@ -706,29 +777,8 @@ def interview():
             try:
                 db_conn_save = get_db()
                 with db_conn_save.cursor() as cur:
-                    interview_data_json = json.dumps({
-                        'details': structured_interview_details,
-                        'skill_analysis': skills_data
-                    })
-                    
-                    cur.execute(
-                        """
-                        INSERT INTO interviews (candidate_name, candidate_email, candidate_phone, role_name, final_verdict, average_score, percentage_score, interview_data, resume_filename, report_filename)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            session['candidate_name'],
-                            session['candidate_email'],
-                            session['candidate_phone'],
-                            session.get('selected_role_name', 'N/A'),
-                            final_message,
-                            avg_score,
-                            perc_score,
-                            interview_data_json,
-                            session.get('original_resume_filename'),
-                            report_filename
-                        )
-                    )
+                    interview_data_json = json.dumps({ 'details': structured_interview_details, 'skill_analysis': skills_data })
+                    cur.execute( """ INSERT INTO interviews (candidate_name, candidate_email, candidate_phone, role_name, final_verdict, average_score, percentage_score, interview_data, resume_filename, report_filename) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) """, ( session['candidate_name'], session['candidate_email'], session['candidate_phone'], session.get('selected_role_name', 'N/A'), final_message, avg_score, perc_score, interview_data_json, session.get('original_resume_filename'), report_filename ))
                 db_conn_save.commit()
                 flash("Interview results successfully saved to the database.", "success")
             except Exception as e:
@@ -736,17 +786,16 @@ def interview():
                 print(f"DATABASE ERROR: Failed to save interview results. {e}")
                 flash("Error: Could not save the interview results to the database.", "danger")
             
-            cleanup_all_interview_artifacts(session.copy())
+            session_copy_for_cleanup = session.copy()
+            # Clear special flags after use
+            session.pop('system_prompt_override', None)
+            session.pop('is_behavioral_interview', None)
+            cleanup_all_interview_artifacts(session_copy_for_cleanup)
             session.modified = True
             
-            return render_template('page3.html',
-                interview_finished=True,
-                average_score=avg_score,
-                percentage_score=perc_score,
-                final_message=final_message,
-                summary_data=zip(scores, session.get('feedbacks', [])),
-                candidate_name=session['candidate_name'],
-                report_filename=report_filename
+            return render_template('intro_interview.html',
+                interview_finished=True, average_score=avg_score, percentage_score=perc_score, final_message=final_message,
+                summary_data=zip(scores, session.get('feedbacks', [])), candidate_name=session['candidate_name'], report_filename=report_filename
             )
 
         next_question, _, _ = conduct_interview_step(role_system_prompt, resume_text_for_ai, session['interview_history'], "", session['question_num'])
@@ -759,7 +808,7 @@ def interview():
             session.setdefault('session_audio_files', []).append(audio_filename)
         current_question = next_question
         
-    else:
+    else: # GET request to start the interview
         session['question_num'] = 1
         first_question, _, _ = conduct_interview_step(role_system_prompt, resume_text_for_ai, [], "", 1)
         session['interview_history'] = [f"Question 1: {first_question}"]
@@ -773,16 +822,16 @@ def interview():
     session.modified = True
     display_question_num = session.get('question_num') if request.method == 'POST' else 1
     
-    return render_template('page3.html',
+    return render_template('intro_interview.html',
                            question=current_question,
                            last_score=session.get('scores', [])[-1] if session.get('scores') and request.method == 'POST' else None,
                            last_feedback=session.get('feedbacks', [])[-1] if session.get('feedbacks') and request.method == 'POST' else None,
                            question_number=display_question_num,
-                           max_questions=MAX_QUESTIONS,
+                           max_questions=max_interview_questions,
                            candidate_name=session.get('candidate_name', 'Candidate'),
                            interview_finished=False,
                            audio_file_url=url_for('static', filename=f'audio/{session.get("audio_filename")}') if session.get('audio_filename') else None)
-
+# --- END: MODIFIED INTERVIEW ROUTE ---
 
 @app.route('/download_report/<path:filename>')
 def download_report(filename):
