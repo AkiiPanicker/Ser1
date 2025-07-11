@@ -1,0 +1,72 @@
+{% extends 'layout.html' %}
+{% block title %}Start Behavioral Interview | AI Interviewer{% endblock %}
+
+{% block content %}
+<style>
+  body {
+    background: linear-gradient(to right, #2c3e50, #4ca1af); /* A different, cool-toned gradient */
+    color: #fff;
+    font-size: 1.2rem;
+  }
+  .card-style {
+    background: rgba(255, 255, 255, 0.95);
+    border: none;
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    color: #1c1f26;
+    animation: fadeInUp 1s ease-out;
+  }
+  .form-control-lg {
+    border-radius: 12px;
+    border: 2px solid #2c3e50;
+    font-size: 1.1rem;
+  }
+  .btn-custom {
+    background: linear-gradient(to right, #2c3e50, #4ca1af);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: 0.3s;
+  }
+  .btn-custom:hover {
+    background: linear-gradient(to right, #4ca1af, #2c3e50);
+  }
+  h2.custom-header {
+    color: #2c3e50 !important;
+    font-size: 2.2rem;
+  }
+  @keyframes fadeInUp {
+    0% { opacity: 0; transform: translateY(50px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<div class="row justify-content-center align-items-center" style="min-height: 90vh;">
+  <div class="col-md-6 col-lg-5">
+    <div class="card-style">
+      <h2 class="text-center mb-2 fw-bold custom-header">Behavioral Interview</h2>
+      <p class="text-center text-muted mb-4">Let's get to know you. Please enter your details to begin.</p>
+      
+      <!-- This form posts to our new route -->
+      <form method="POST" action="{{ url_for('behavioral_interview_start') }}">
+        <div class="mb-3">
+          <label for="candidate_name" class="form-label fw-semibold">Full Name:</label>
+          <input type="text" id="candidate_name" name="candidate_name" class="form-control form-control-lg" placeholder="e.g., Alex Ray" required autofocus />
+        </div>
+        <div class="mb-3">
+          <label for="candidate_email" class="form-label fw-semibold">Email Address:</label>
+          <input type="email" id="candidate_email" name="candidate_email" class="form-control form-control-lg" placeholder="e.g., alex@example.com" required />
+        </div>
+        <div class="mb-4">
+          <label for="candidate_phone" class="form-label fw-semibold">Phone Number:</label>
+          <input type="tel" id="candidate_phone" name="candidate_phone" class="form-control form-control-lg" placeholder="e.g., 9876543210" required pattern="[0-9]{10}" title="Please enter a 10-digit phone number." />
+        </div>
+        <button type="submit" class="btn btn-custom btn-lg w-100">Start My Interview</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
