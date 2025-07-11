@@ -1,0 +1,17 @@
+# Base image
+FROM python:3.10
+
+# Set working directory in container
+WORKDIR /app
+
+# Copy project files into the container
+COPY . .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port Flask runs on (optional if using Flask)
+EXPOSE 5000
+
+# Run your app
+CMD ["python", "app.py"]
