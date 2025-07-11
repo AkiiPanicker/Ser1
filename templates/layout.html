@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,17 +29,22 @@
       </button>
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('page1') }}">Home</a>
+          
+          <!-- === START: MODIFIED DROPDOWN MENU === -->
+         <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Interview Tools
+            </a>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="{{ url_for('page1') }}">Resume-Based Interview</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('behavioral_interview_start') }}">Behavioral Interview</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="{{ url_for('ats_checker') }}">ATS Checker</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('ita_analyzer') }}">Transcript Analyzer (ITA)</a></li>
+            </ul>
           </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('ats_checker') }}">ATS Checker</a>
-          </li>
-          <!-- === NEW ITA LINK === -->
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('ita_analyzer') }}">ITA</a>
-          </li>
-          <!-- === END OF ITA LINK === -->
+          <!-- === END: MODIFIED DROPDOWN MENU === -->
+          
           <li class="nav-item">
             <a class="nav-link" href="{{ url_for('admin_login') }}">Admin Panel</a>
           </li>
@@ -51,6 +55,19 @@
   <!-- END: NAVBAR BLOCK -->
 
   <main role="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container-fluid p-0">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show m-0 text-center" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
     {% block content %}{% endblock %}
   </main>
 
