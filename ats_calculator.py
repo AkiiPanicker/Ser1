@@ -13,19 +13,13 @@ from datetime import datetime
 import warnings
 import html
 
-# --- MODIFICATION 1: Swap API imports ---
-# import google.generativeai as genai  <- REMOVED
-from groq import Groq                   # <- ADDED
-
-# Document processing imports
+from groq import Groq
 import PyPDF2
 from docx import Document
 
 warnings.filterwarnings('ignore')
 
-# --- NLTK and SpaCy Setup (Unchanged) ---
 def setup_nlp_resources():
-    # ... (this function is unchanged)
     try:
         nltk.data.find('tokenizers/punkt')
     except LookupError:
@@ -45,17 +39,14 @@ def setup_nlp_resources():
     return nlp
 
 nlp = setup_nlp_resources()
-# --- End of Setup ---
 
 
 class AdvancedATSCalculator:
     def __init__(self):
-        # --- MODIFICATION 2: Initialize Groq client ---
         self.groq_client = None
         if os.getenv("GROQ_API_KEY"):
             self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
             self.groq_model = "llama3-8b-8192"
-        # --- END MODIFICATION ---
 
         self.stop_words = set(nltk.corpus.stopwords.words('english'))
         self.action_verbs = [
@@ -72,7 +63,6 @@ class AdvancedATSCalculator:
             'responsible for', 'duties included', 'tasked with', 'worked on',
             'assisted with', 'involved in', 'in charge of'
         ]
-
         self.technical_skills = {
             'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'php', 'ruby', 'go', 'rust', 'scala', 'kotlin', 'swift', 'r', 'matlab', 'sql', 'html', 'css', 'typescript'],
             'frameworks': ['react', 'angular', 'vue', 'node.js', 'django', 'flask', 'spring', 'laravel', 'express', 'bootstrap', 'jquery', 'tensorflow', 'pytorch', 'keras', 'next.js'],
@@ -87,8 +77,6 @@ class AdvancedATSCalculator:
             'critical thinking', 'collaboration', 'innovation', 'strategic thinking',
             'project management', 'mentoring', 'coaching', 'negotiation'
         ]
-
-    # --- ALL OTHER METHODS UNTIL `generate_ai_suggestions` ARE UNCHANGED ---
 
     def extract_text(self, filepath, filename):
         if filename.lower().endswith('.pdf'): return self.extract_text_from_pdf(filepath)
@@ -131,15 +119,10 @@ class AdvancedATSCalculator:
 
     def analyze_work_experience(self, text):
         analysis = {
-            'quantified_metrics': [],
-            'action_verbs_found': [],
-            'passive_phrases_found': []
-        }
+            'quantified_metrics': [], 'action_verbs_found': [], 'passive_phrases_found': [] }
         quant_pattern = re.compile(r'\b(\d+%|\$\d[,\d\.]*|\d+ years|\d+-\d+)\b')
         lines = text.split('\n')
-        found_metrics = set()
-        found_verbs = set()
-        found_passive = set()
+        found_metrics = set(); found_verbs = set(); found_passive = set()
         for line in lines:
             for match in re.finditer(quant_pattern, line):
                 found_metrics.add(match.group(0))
@@ -147,14 +130,12 @@ class AdvancedATSCalculator:
             for verb in self.action_verbs:
                 if re.match(r'^[•\*\-\s]*' + verb + r'\b', stripped_line, re.IGNORECASE):
                     verb_match = re.search(r'\b' + verb + r'\b', stripped_line, re.IGNORECASE)
-                    if verb_match:
-                        found_verbs.add(verb_match.group(0))
+                    if verb_match: found_verbs.add(verb_match.group(0))
                     break
             for phrase in self.passive_phrases:
                 if phrase.lower() in line.lower():
                     phrase_match = re.search(re.escape(phrase), line, re.IGNORECASE)
-                    if phrase_match:
-                        found_passive.add(phrase_match.group(0))
+                    if phrase_match: found_passive.add(phrase_match.group(0))
         analysis['quantified_metrics'] = list(found_metrics)
         analysis['action_verbs_found'] = list(found_verbs)
         analysis['passive_phrases_found'] = list(found_passive)
@@ -164,23 +145,37 @@ class AdvancedATSCalculator:
 
     def analyze_keyword_match(self, resume_text, job_description):
         if not job_description:
-            return {'score': 75, 'matched_keywords': [], 'missing_keywords': [], 'feedback': "No job description provided. Keyword score is based on general relevance."}
+            return {'score': 75, 'matched_keywords': [], 'missing_keywords': [], 'feedback': "No job description provided. Score is based on general resume quality."}
+        
         jd_keywords = self.extract_skills_from_jd(job_description)
         if not jd_keywords: 
-            return {'score': 70, 'matched_keywords': [], 'missing_keywords': [], 'feedback': "Could not extract specific skills from job description. Check formatting."}
+            return {'score': 70, 'matched_keywords': [], 'missing_keywords': [], 'feedback': "Could not extract scannable skills from job description. Score is based on general resume quality."}
+        
         resume_lower = resume_text.lower()
         matched_keywords = [kw for kw in jd_keywords if kw in resume_lower]
         missing_keywords = list(jd_keywords - set(matched_keywords))
-        score = (len(matched_keywords) / len(jd_keywords)) * 100 if jd_keywords else 0
+        
+        # Calculate direct keyword match score
+        direct_match_score = (len(matched_keywords) / len(jd_keywords)) * 100 if jd_keywords else 0
+
+        # --- OPTIMIZED SEMANTIC SIMILARITY ---
+        # Instead of comparing two large documents, we compare the resume to a
+        # compact string of the JD's most important keywords. This is much faster.
         resume_doc = nlp(resume_text)
-        jd_doc = nlp(job_description)
-        similarity = resume_doc.similarity(jd_doc)
-        final_score = score * 0.7 + similarity * 100 * 0.3
+        jd_keywords_text = " ".join(jd_keywords)
+        jd_doc = nlp(jd_keywords_text)
+        
+        similarity_score = 0
+        if resume_doc.has_vector and jd_doc.has_vector:
+            similarity_score = resume_doc.similarity(jd_doc)
+
+        # Combine direct match and semantic similarity for a more robust score
+        final_score = (direct_match_score * 0.7) + (similarity_score * 100 * 0.3)
+        
         return {'score': min(100, final_score), 'matched_keywords': matched_keywords, 'missing_keywords': sorted(missing_keywords[:10])}
 
     def preprocess_text(self, text):
-        text = text.lower()
-        text = re.sub(r'\s+', ' ', text)
+        text = text.lower(); text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'[^\w\s\-\.\@\+\#]', ' ', text)
         return text.strip()
 
@@ -216,31 +211,52 @@ class AdvancedATSCalculator:
         
     def calculate_overall_score(self, text, filename, job_description):
         results = {'word_count': len(text.split()), 'raw_text': text}
+        
+        # Calculate all component scores
         contact_info = self.extract_contact_info(text)
-        contact_score = 100 if contact_info['emails'] and contact_info['phones'] else 50
-        results['contact_score'] = contact_score
+        results['contact_score'] = 100 if contact_info['emails'] and contact_info['phones'] else 50
         results['contact_info'] = contact_info
+        
         keyword_results = self.analyze_keyword_match(text, job_description)
         results['keyword_score'] = keyword_results['score']
         results.update(keyword_results)
+
         experience_analysis = self.analyze_work_experience(text)
         results['impact_score'] = experience_analysis['score']
         results['experience_analysis'] = experience_analysis
+        
         skills = self.extract_skills(text)
         results['skills_score'] = min(skills['total_technical'] * 4 + skills['total_soft'] * 1.5, 100)
         results['skills'] = skills
+        
         readability = self.analyze_readability(text)
         length_score = 100 if 400 <= results['word_count'] <= 800 else max(0, 100 - (abs(600 - results['word_count']) / 6))
         results['readability_score'] = (readability['score'] * 0.6) + (length_score * 0.4)
         results['readability_details'] = readability
-        if filename.lower().endswith(('.pdf', '.docx')): format_score = 100
-        else: format_score = 70
-        results['format_score'] = format_score
-        overall_score = (
-            results['contact_score'] * 0.05 + results['keyword_score'] * 0.40 +
-            results['impact_score'] * 0.25 + results['skills_score'] * 0.10 +
-            results['readability_score'] * 0.10 + results['format_score'] * 0.10
-        )
+
+        results['format_score'] = 100 if filename.lower().endswith(('.pdf', '.docx')) else 70
+
+        # --- DYNAMIC SCORE WEIGHTING ---
+        if job_description:
+            # If JD is provided, focus on the match score.
+            overall_score = (
+                results['keyword_score'] * 0.40 +
+                results['impact_score'] * 0.25 +
+                results['skills_score'] * 0.10 +
+                results['readability_score'] * 0.10 +
+                results['contact_score'] * 0.05 +
+                results['format_score'] * 0.10
+            )
+        else:
+            # If NO JD, focus on general resume quality by redistributing the keyword weight.
+            overall_score = (
+                results['impact_score'] * 0.50 +      # Increased from 0.25
+                results['skills_score'] * 0.25 +      # Increased from 0.10
+                results['readability_score'] * 0.10 +
+                results['contact_score'] * 0.05 +
+                results['format_score'] * 0.10
+            )
+
         results['overall_score'] = round(overall_score, 2)
         return results
 
@@ -253,60 +269,41 @@ class AdvancedATSCalculator:
         else: benchmark = f"A score of {score} indicates your resume needs significant optimization to pass initial ATS screenings effectively."
         recs.append(benchmark)
         if results['contact_score'] < 100: recs.append("Ensure both a professional email and a phone number are clearly listed.")
-        if results['keyword_score'] < 70: recs.append("Incorporate more relevant keywords and skills from the job description to improve your semantic match.")
-        if len(results['missing_keywords']) > 0: recs.append(f"Consider including these top missing keywords if relevant: {', '.join(results['missing_keywords'])}.")
+        if results.get('missing_keywords'):
+            if results['keyword_score'] < 70: recs.append("Incorporate more relevant keywords and skills from the job description to improve your semantic match.")
+            recs.append(f"Consider including these top missing keywords if relevant: {', '.join(results['missing_keywords'])}.")
         if results['impact_score'] < 60: recs.append("Strengthen your work experience section by adding more quantified results (using numbers, $, %) and starting bullet points with strong action verbs.")
         if results['experience_analysis']['passive_phrases_found']: recs.append("Rephrase passive sentences (e.g., 'Responsible for...') to be more active and results-oriented (e.g., 'Managed...').")
-        if not (400 <= results['word_count'] <= 800): recs.append(f"Your resume's word count is {results['word_count']}. The ideal range is 400-800 words.")
+        if not (400 <= results['word_count'] <= 800): recs.append(f"Your resume's word count is {results['word_count']}. The ideal range is 400-800 words for most roles.")
         return recs
 
-    # --- MODIFICATION 3: Rewrote this entire function to use Groq ---
     def generate_ai_suggestions(self, results, job_description):
-        # Check if the Groq client was initialized and if we have the necessary data
         if not self.groq_client or not job_description or not results.get('experience_analysis'):
             return ""
-            
+        
         passive_phrases_str = "\n- ".join(results['experience_analysis']['passive_phrases_found'][:2])
         missing_keywords_str = ", ".join(results['missing_keywords'][:5])
 
-        # The prompt is a high-quality instruction and can remain the same
         prompt = f"""You are a helpful career coach. A user has an ATS score of {results['overall_score']}/100 for a job. The Job Description includes keywords like: {missing_keywords_str}. The resume has some passive phrases, such as:\n- {passive_phrases_str if passive_phrases_str else 'None found'}\n\nBased on this, provide 2-3 specific, actionable suggestions for bullet points they could add or rephrase in their resume to make it stronger for THIS job. Be concise and encouraging. Do not use markdown. Start with a phrase like "Here are a few AI-powered suggestions:".\n\nExample Suggestion:\nInstead of 'Responsible for a project', try 'Spearheaded a 6-month project, increasing team productivity by 15% by implementing agile methodologies.'"""
         
         try:
-            # Make the API call using the Groq client
             chat_completion = self.groq_client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model=self.groq_model,
-            )
+                messages=[{"role": "user", "content": prompt,}], model=self.groq_model)
             return chat_completion.choices[0].message.content
         except Exception as e:
             print(f"Error calling Groq for suggestions: {e}")
             return "An error occurred while generating AI suggestions."
-    # --- END MODIFICATION ---
 
     def generate_highlighted_resume_html(self, results):
         text = results.get('raw_text', '')
-        if not text:
-            return ""
-
+        if not text: return ""
         highlights = results.get('experience_analysis', {})
-        
         phrases_to_highlight = []
-        for phrase in set(highlights.get('passive_phrases_found', [])):
-            phrases_to_highlight.append((phrase, "highlight-red", "This phrase is passive. Try starting with an action verb."))
-        for metric in set(highlights.get('quantified_metrics', [])):
-            phrases_to_highlight.append((metric, "highlight-green", "Excellent! Quantified results are highly impactful."))
-        for verb in set(highlights.get('action_verbs_found', [])):
-            phrases_to_highlight.append((verb, "highlight-blue", "Great use of an action verb!"))
-            
+        for phrase in set(highlights.get('passive_phrases_found', [])): phrases_to_highlight.append((phrase, "highlight-red", "This phrase is passive. Try starting with an action verb."))
+        for metric in set(highlights.get('quantified_metrics', [])): phrases_to_highlight.append((metric, "highlight-green", "Excellent! Quantified results are highly impactful."))
+        for verb in set(highlights.get('action_verbs_found', [])): phrases_to_highlight.append((verb, "highlight-blue", "Great use of an action verb!"))
         phrases_to_highlight.sort(key=lambda x: len(x[0]), reverse=True)
         safe_text = html.escape(text)
-
         for phrase, class_name, title_text in phrases_to_highlight:
             safe_phrase = html.escape(phrase)
             replacement_html = f'<span class="{class_name}" title="{title_text}">{safe_phrase}</span>'
@@ -314,34 +311,21 @@ class AdvancedATSCalculator:
                 safe_text = re.sub(r'\b' + re.escape(safe_phrase) + r'\b', replacement_html, safe_text, flags=re.IGNORECASE)
             except re.error:
                 safe_text = safe_text.replace(safe_phrase, replacement_html)
-            
         return safe_text.replace('\n', '<br>')
-
 
     def create_visualizations(self, results):
         fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = results['overall_score'],
-            title = {'text': "Overall ATS Score", 'font': {'size': 24}},
-            gauge = {
-                'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                'bar': {'color': "#2575fc"},
+            mode = "gauge+number", value = results['overall_score'], title = {'text': "Overall ATS Score", 'font': {'size': 24}},
+            gauge = {'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"}, 'bar': {'color': "#2575fc"},
                 'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "#ccc",
-                'steps': [{'range': [0, 50], 'color': '#ea4335'}, {'range': [50, 80], 'color': '#fbbc05'}, {'range': [80, 100], 'color': '#34a853'}]}
-        ))
+                'steps': [{'range': [0, 50], 'color': '#ea4335'}, {'range': [50, 80], 'color': '#fbbc05'}, {'range': [80, 100], 'color': '#34a853'}]} ))
         fig_gauge.update_layout(paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=300, margin=dict(l=20, r=20, t=50, b=20))
-        
         categories = ['Keyword Match', 'Experience Impact', 'Listed Skills', 'Readability', 'Contact Info']
         scores = [results['keyword_score'], results['impact_score'], results['skills_score'], results['readability_score'], results['contact_score']]
-        
         fig_radar = go.Figure()
         fig_radar.add_trace(go.Scatterpolar(
-            r=scores, theta=categories, fill='toself', name='Score Breakdown',
-            line=dict(color='#6a11cb')
-        ))
+            r=scores, theta=categories, fill='toself', name='Score Breakdown', line=dict(color='#6a11cb')))
         fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            title="Score Breakdown by Category", height=400,
-            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
-        )
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])), title="Score Breakdown by Category", height=400,
+            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         return fig_gauge, fig_radar
