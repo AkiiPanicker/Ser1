@@ -27,7 +27,7 @@
   .badge-matched { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
   .badge-missing { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
 
-  /* --- NEW STYLES for highlighting and new elements --- */
+  /* --- Styles for highlighting and new elements --- */
   .highlight-green { background-color: #d1e7dd; padding: 0 2px; border-radius: 3px; cursor: pointer; }
   .highlight-red { background-color: #f8d7da; padding: 0 2px; border-radius: 3px; cursor: pointer; }
   .highlight-blue { background-color: #cff4fc; padding: 0 2px; border-radius: 3px; cursor: pointer; }
@@ -50,6 +50,8 @@
       border-left: 5px solid #6a11cb;
       padding: 1.5rem;
       border-radius: .5rem;
+      /* --- FIX #1: This CSS property respects the newline characters in the text --- */
+      white-space: pre-wrap; 
   }
 
   .btn-practice-interview {
@@ -123,11 +125,12 @@
                   </ul>
                 {% endif %}
 
-                <!-- --- NEW: AI Generated Suggestions --- -->
+                <!-- --- AI Generated Suggestions --- -->
                 {% if ai_suggestions %}
                 <div class="ai-suggestions-box mt-4">
                     <h5 class="fw-bold">✨ AI-Powered Suggestions</h5>
-                    <p>{{ ai_suggestions|safe|nl2br }}</p>
+                    <!-- --- FIX #2: Removed the broken nl2br filter --- -->
+                    <p>{{ ai_suggestions|safe }}</p>
                 </div>
                 {% endif %}
             </div>
@@ -135,7 +138,7 @@
         
         <hr class="my-5">
 
-        <!-- --- NEW: In-line Resume Analysis --- -->
+        <!-- --- In-line Resume Analysis --- -->
         <div class="row">
           <div class="col-lg-12">
             <h3 class="mb-3">📄 Live Resume Analysis</h3>
@@ -169,7 +172,7 @@
               {% endif %}
           </div>
           
-          <!-- --- NEW: Integrated Interview Practice Button --- -->
+          <!-- --- Integrated Interview Practice Button --- -->
           <div class="col-lg-5 d-flex align-items-center justify-content-center mt-5 mt-lg-0">
               <div class="text-center">
                   <h4 class="fw-bold" style="color: #1d976c;">Resume Optimized?</h4>
